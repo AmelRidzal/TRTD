@@ -31,10 +31,9 @@
     </div>
 
     <!-- ── Canvas + Overlay ── -->
-    <div style="position:relative;">
-      <div id="phaser-container"></div>
+    <div id="phaser-container"></div>
 
-      <div id="overlay">
+    <div id="overlay">
         <div class="scan-line"></div>
 
         <!-- ════════════════════════════════════════
@@ -149,6 +148,9 @@
           <div class="lobby-code-box">
             <div id="lobby-code-display">····</div>
           </div>
+          <button class="copy-code-btn" id="copy-code-btn" onclick="copyLobbyCode()">
+            <span id="copy-code-label">⎘ COPY CODE</span>
+          </button>
           <div class="lobby-hint">Share this code with your opponent</div>
           <div class="lobby-status-row">
             <div class="lobby-dot waiting"></div>
@@ -211,14 +213,17 @@
         <div id="screen-duel-result" class="screen">
           <div class="result-title" id="duel-result-title">YOU WIN</div>
           <div class="result-sub"  id="duel-result-sub">ENEMY TANK DESTROYED</div>
-          <div class="btn-row" style="margin-top:36px">
-            <button class="big-btn" onclick="showScreen('screen-duel-menu')">↺ PLAY AGAIN</button>
+          <div class="rematch-notification" id="rematch-notification" style="display:none">
+            <div class="rematch-dot"></div>
+            <span id="rematch-notification-text">Opponent wants a rematch!</span>
+          </div>
+          <div class="btn-row" style="margin-top:20px">
+            <button class="big-btn" id="rematch-btn" onclick="requestRematch()">⟳ REMATCH</button>
             <button class="big-btn muted" onclick="showScreen('screen-main')">⌂ MENU</button>
           </div>
         </div>
 
-      </div><!-- /#overlay -->
-    </div>
+    </div><!-- /#overlay -->
 
     <div id="controls-hint">
       WASD — MOVE &nbsp;·&nbsp; MOUSE — AIM &nbsp;·&nbsp; LEFT CLICK / HOLD — SHOOT
@@ -232,7 +237,12 @@
 <script src="js/hud.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/textures.js"></script>
+<script src="js/maps/map-utils.js"></script>
 <script src="js/maps/map-arena.js"></script>
+<script src="js/maps/map-corridor.js"></script>
+<script src="js/maps/map-fortress.js"></script>
+<script src="js/maps/map-bunker.js"></script>
+<script src="js/maps/map-crossroads.js"></script>
 <script src="js/modes/wave-scene.js"></script>
 <script src="js/modes/duel-scene.js"></script>
 <script src="js/main.js"></script>

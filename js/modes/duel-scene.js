@@ -158,6 +158,11 @@ class DuelScene extends Phaser.Scene {
       case 'opponent_disconnected':
         this._forfeit();
         break;
+      case 'rematch_request':
+      case 'rematch_start':
+        // Hand off to ui.js — it owns the rematch flow
+        _handleRematchMessage(msg.type);
+        break;
     }
   }
 

@@ -158,7 +158,18 @@ function _connectDuelSocket(code, playerIndex) {
 
       case 'opponent_disconnected':
         alert('Your opponent disconnected.');
+        if (duelSocket) { duelSocket.close(); duelSocket = null; }
         showScreen('screen-main');
+        break;
+
+      case 'map_selected':
+        // Server picked the map — sync activeMap so the scene builds the right one
+        if (MAPS[msg.mapId]) activeMap = MAPS[msg.mapId];
+        break;
+
+      case 'rematch_request':
+      case 'rematch_start':
+        _handleRematchMessage(msg.type);
         break;
     }
   };
@@ -176,7 +187,7 @@ function _connectDuelSocket(code, playerIndex) {
 // Host clicks START
 function startDuelGame() {
   if (!duelSocket || duelSocket.readyState !== WebSocket.OPEN) return;
-  duelSocket.send(JSON.stringify({ type: 'start_game' }));
+  duelSocket.send(JSON.stringify({ type: 'start_game', mapId: activeMap.id }));
 }
 
 // Both clients receive game_start → launch DuelScene
@@ -206,20 +217,111 @@ function showDuelResult(won, forfeit = false) {
     subEl.textContent   = 'YOUR TANK WAS DESTROYED';
   }
 
-  if (duelSocket) { duelSocket.close(); duelSocket = null; }
+  // Reset rematch UI
+  const notif = document.getElementById('rematch-notification');
+  const btn   = document.getElementById('rematch-btn');
+  if (notif) { notif.style.display = 'none'; }
+  if (btn)   { btn.textContent = '⟳ REMATCH'; btn.disabled = false; btn.classList.remove('waiting-rematch'); }
+
+  // Keep socket alive for rematch — don't close it here
   showScreen('screen-duel-result');
 }
 
-// ── Viewport scaling ──────────────────────────────────────────────
-(function initScaling() {
-  const DESIGN_W = 900, DESIGN_H = 668;
-  function applyScale() {
-    const scale   = Math.min(window.innerWidth / DESIGN_W, window.innerHeight / DESIGN_H);
-    const wrapper = document.getElementById('game-wrapper');
-    wrapper.style.transform  = `scale(${scale})`;
-    wrapper.style.marginLeft = (window.innerWidth  - DESIGN_W * scale) / 2 + 'px';
-    wrapper.style.marginTop  = (window.innerHeight - DESIGN_H * scale) / 2 + 'px';
+
+// ── Copy lobby code ───────────────────────────────────────────────
+function copyLobbyCode() {
+  const code = duelLobbyCode;
+  if (!code) return;
+  navigator.clipboard.writeText(code).then(() => {
+    const btn   = document.getElementById('copy-code-btn');
+    const label = document.getElementById('copy-code-label');
+    label.textContent = '✓ COPIED!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      label.textContent = '⎘ COPY CODE';
+      btn.classList.remove('copied');
+    }, 2000);
+  }).catch(() => {
+    // Fallback for browsers that block clipboard without HTTPS
+    prompt('Copy this code:', code);
+  });
+}
+
+// ── Rematch ───────────────────────────────────────────────────────
+// State: 0 = neither, 1 = I requested, 2 = both → restart
+let _rematchMine = false;
+
+function requestRematch() {
+  if (!duelSocket || duelSocket.readyState !== WebSocket.OPEN) {
+    alert('Connection lost. Start a new lobby.');
+    showScreen('screen-main');
+    return;
   }
+  _rematchMine = true;
+  duelSocket.send(JSON.stringify({ type: 'rematch_request' }));
+
+  const btn = document.getElementById('rematch-btn');
+  btn.textContent = '⟳ WAITING...';
+  btn.classList.add('waiting-rematch');
+  btn.disabled = true;
+}
+
+// Called from _connectDuelSocket's onmessage handler
+function _handleRematchMessage(type) {
+  if (type === 'rematch_request') {
+    // Opponent wants a rematch — show notification
+    const notif = document.getElementById('rematch-notification');
+    const text  = document.getElementById('rematch-notification-text');
+    text.textContent = 'Opponent wants a rematch!';
+    notif.style.display = 'flex';
+  }
+  if (type === 'rematch_start') {
+    // Both agreed — restart the game
+    _rematchMine = false;
+    if (phaserGame) { phaserGame.destroy(true); phaserGame = null; }
+    _launchDuelGame();
+  }
+}
+
+// ── Viewport scaling ──────────────────────────────────────────────
+// #game-wrapper is position:absolute inside #scale-root (position:fixed).
+// applyScale() sets its width, height, scale, left, and top so it
+// always fills the viewport correctly regardless of map size.
+
+const HUD_H  = 46;   // px — fixed HUD strip height
+const HINT_H = 28;   // px — fixed hint strip height
+const MENU_CANVAS_W = 900;
+const MENU_CANVAS_H = 600;
+
+function applyScale() {
+  const wrapper = document.getElementById('game-wrapper');
+
+  // Use Phaser canvas dimensions when in-game, menu defaults otherwise
+  const canvas = wrapper.querySelector('canvas');
+  const cW = (canvas && canvas.width  > 0) ? canvas.width  : MENU_CANVAS_W;
+  const cH = (canvas && canvas.height > 0) ? canvas.height : MENU_CANVAS_H;
+
+  const totalW = cW;
+  const totalH = cH + HUD_H + HINT_H;
+
+  const scale = Math.min(
+    window.innerWidth  / totalW,
+    window.innerHeight / totalH
+  );
+
+  const scaledW = totalW * scale;
+  const scaledH = totalH * scale;
+  const left    = (window.innerWidth  - scaledW) / 2;
+  const top     = (window.innerHeight - scaledH) / 2;
+
+  wrapper.style.width     = totalW + 'px';
+  wrapper.style.height    = totalH + 'px';
+  wrapper.style.transform = `scale(${scale})`;
+  wrapper.style.left      = left + 'px';
+  wrapper.style.top       = top  + 'px';
+}
+
+(function initScaling() {
   applyScale();
   window.addEventListener('resize', applyScale);
 })();
