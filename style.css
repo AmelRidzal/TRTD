@@ -1,0 +1,329 @@
+/* ================================================================
+   TANK COMMANDER — style.css
+   ================================================================ */
+
+/* ── Reset & base ──────────────────────────────────────────────── */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%; height: 100%;
+  background: #07070f;
+  font-family: 'Orbitron', monospace;
+  overflow: hidden;
+  cursor: default;
+}
+
+/* Hide the OS cursor only over the live game canvas so the
+   custom Phaser crosshair takes over. Menus keep a normal cursor. */
+#phaser-container canvas { cursor: none; }
+
+/* ── Outer shell: fills the full viewport ── */
+#scale-root {
+  position: fixed; inset: 0;
+  background: #07070f;
+  overflow: hidden;
+}
+
+/* ── 900 × 668 px design canvas — JS applies a uniform scale transform ─ */
+#game-wrapper {
+  position: relative;
+  width: 900px;
+  height: 668px; /* HUD 46 + canvas 600 + hint 22 */
+  transform-origin: top left;
+  flex-shrink: 0;
+}
+
+/* The canvas parent must match canvas height exactly */
+#phaser-container {
+  width: 900px;
+  height: 600px;
+}
+
+/* ================================================================
+   HUD
+   ================================================================ */
+#hud {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 0 6px; height: 46px;
+}
+.hud-block { display: flex; flex-direction: column; gap: 3px; min-width: 210px; }
+.hud-block.right { align-items: flex-end; }
+.hud-label {
+  font-size: 9px; letter-spacing: 3px; color: #2a2a40;
+  font-family: 'Share Tech Mono', monospace;
+}
+.hud-value { font-size: 13px; font-weight: 900; letter-spacing: 2px; color: #00e5ff; }
+.hud-center { text-align: center; flex: 1; }
+#wave-title {
+  font-size: 9px; font-weight: 400; letter-spacing: 6px; color: #2a2a40;
+  font-family: 'Share Tech Mono', monospace;
+}
+#wave-num { font-size: 26px; font-weight: 900; color: #fff; letter-spacing: 4px; line-height: 1; }
+
+.bar-wrap { width: 210px; height: 6px; background: #111122; border-radius: 1px; overflow: hidden; }
+#hp-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #00e5ff, #0077aa);
+  border-radius: 1px;
+  transition: width 0.12s;
+  width: 100%;
+}
+
+#phaser-container canvas { display: block; }
+
+#controls-hint {
+  padding: 6px 0 0;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px; color: #1e1e30; letter-spacing: 1px; text-align: center;
+}
+
+/* ================================================================
+   OVERLAY (shared wrapper for all menu screens)
+   Covers the full 668px wrapper so no gap appears above the menu.
+   ================================================================ */
+#overlay {
+  position: absolute; top: 0; left: 0;
+  width: 900px; height: 668px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: rgba(7,7,15,0.97);
+  z-index: 200; backdrop-filter: blur(8px);
+}
+#overlay.hidden { display: none; }
+
+/* CRT scanline texture */
+.scan-line {
+  position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent, transparent 3px,
+    rgba(0,229,255,0.01) 3px, rgba(0,229,255,0.01) 4px
+  );
+}
+
+/* Corner bracket decorations */
+#overlay::before, #overlay::after {
+  content: ''; position: absolute; width: 60px; height: 60px;
+  border-color: #00e5ff22; border-style: solid;
+}
+#overlay::before { top: 16px; left: 16px; border-width: 2px 0 0 2px; }
+#overlay::after  { bottom: 16px; right: 16px; border-width: 0 2px 2px 0; }
+
+/* ================================================================
+   SCREEN SYSTEM  (each child of #overlay is a .screen)
+   ================================================================ */
+.screen { display: none; flex-direction: column; align-items: center; }
+.screen.active { display: flex; }
+
+/* ================================================================
+   MAIN MENU
+   ================================================================ */
+.game-logo { line-height: 1; margin-bottom: 4px; text-align: center; }
+.game-logo .t1 {
+  display: block; font-size: 68px; font-weight: 900; letter-spacing: 12px;
+  color: #00e5ff;
+  text-shadow: 0 0 50px #00e5ff55, 0 0 100px #00e5ff22;
+}
+.game-logo .t2 {
+  display: block; font-size: 18px; font-weight: 700; letter-spacing: 18px;
+  color: #ff4060; text-shadow: 0 0 30px #ff406044; margin-left: 4px;
+}
+.tagline {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px; color: #252535; letter-spacing: 5px; margin-bottom: 22px;
+}
+
+/* Mode cards grid */
+.mode-grid { display: flex; gap: 18px; }
+
+.mode-card {
+  width: 196px; padding: 26px 18px 22px;
+  background: #0c0c1a; border: 1px solid #16162c;
+  cursor: pointer; transition: all 0.22s;
+  text-align: center; position: relative; overflow: hidden;
+  clip-path: polygon(14px 0%, 100% 0%, calc(100% - 14px) 100%, 0% 100%);
+}
+.mode-card::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+  background: #00e5ff; transform: scaleX(0); transition: transform 0.22s; transform-origin: left;
+}
+.mode-card:hover {
+  background: #101020; transform: translateY(-4px);
+  border-color: #00e5ff22; box-shadow: 0 12px 50px rgba(0,229,255,0.08);
+}
+.mode-card:hover::after { transform: scaleX(1); }
+.mode-card.locked { opacity: 0.3; pointer-events: none; }
+
+.mode-icon  { font-size: 34px; margin-bottom: 14px; display: block; }
+.mode-name  { font-size: 12px; font-weight: 900; letter-spacing: 3px; color: #fff; margin-bottom: 8px; }
+.mode-desc  { font-family: 'Share Tech Mono', monospace; font-size: 9px; color: #333; letter-spacing: 1px; line-height: 1.7; }
+.mode-badge {
+  position: absolute; top: 0; right: 0;
+  font-family: 'Share Tech Mono', monospace; font-size: 8px; letter-spacing: 2px;
+  padding: 3px 9px; background: #ff4060; color: #fff;
+}
+
+/* ================================================================
+   DIFFICULTY SELECT SCREEN
+   ================================================================ */
+.back-btn {
+  position: absolute; top: 18px; left: 20px;
+  font-family: 'Share Tech Mono', monospace; font-size: 11px; letter-spacing: 3px;
+  color: #2a2a40; cursor: pointer; transition: color 0.2s; background: none; border: none;
+}
+.back-btn:hover { color: #00e5ff; }
+
+.screen-eyebrow {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px; letter-spacing: 6px; color: #2a2a40; margin-bottom: 8px;
+}
+.screen-heading { font-size: 30px; font-weight: 900; letter-spacing: 6px; color: #fff; margin-bottom: 38px; }
+
+.diff-grid { display: flex; gap: 14px; }
+
+.diff-card {
+  width: 154px; padding: 22px 14px;
+  border: 1px solid #16162c; background: #0c0c1a;
+  cursor: pointer; transition: all 0.2s; text-align: center;
+  clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+}
+.diff-card:hover { transform: translateY(-3px); }
+.diff-card[data-d="easy"]:hover   { border-color: #00ff8855; box-shadow: 0 8px 30px rgba(0,255,136,0.12); }
+.diff-card[data-d="normal"]:hover { border-color: #00e5ff55; box-shadow: 0 8px 30px rgba(0,229,255,0.12); }
+.diff-card[data-d="hard"]:hover   { border-color: #ffaa0055; box-shadow: 0 8px 30px rgba(255,170,0,0.12); }
+.diff-card[data-d="insane"]:hover { border-color: #ff406055; box-shadow: 0 8px 30px rgba(255,64,96,0.12); }
+
+.diff-icon { font-size: 26px; margin-bottom: 10px; }
+.diff-name { font-size: 11px; font-weight: 900; letter-spacing: 3px; margin-bottom: 10px; }
+.diff-card[data-d="easy"]   .diff-name { color: #00ff88; }
+.diff-card[data-d="normal"] .diff-name { color: #00e5ff; }
+.diff-card[data-d="hard"]   .diff-name { color: #ffaa00; }
+.diff-card[data-d="insane"] .diff-name { color: #ff4060; }
+
+.diff-stat {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px; color: #2a2a40; letter-spacing: 1px; line-height: 1.9;
+}
+
+/* ================================================================
+   RESULT SCREEN
+   ================================================================ */
+.result-title { font-size: 52px; font-weight: 900; letter-spacing: 8px; line-height: 1; margin-bottom: 6px; }
+.result-sub {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px; letter-spacing: 5px; color: #2a2a40; margin-bottom: 34px;
+}
+
+.result-stats { display: flex; gap: 24px; margin-bottom: 36px; }
+.stat-box { text-align: center; border: 1px solid #16162c; padding: 16px 28px; background: #0c0c1a; }
+.stat-val  { font-size: 30px; font-weight: 900; color: #fff; }
+.stat-lbl  {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px; color: #2a2a40; letter-spacing: 3px; margin-top: 5px;
+}
+
+/* ================================================================
+   SHARED BUTTON STYLES
+   ================================================================ */
+.btn-row { display: flex; gap: 12px; }
+
+.big-btn {
+  background: transparent; border: 2px solid #00e5ff; color: #00e5ff;
+  font-family: 'Orbitron', monospace; font-size: 12px; font-weight: 700; letter-spacing: 4px;
+  padding: 13px 40px; cursor: pointer; transition: all 0.2s;
+  clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+}
+.big-btn:hover { background: #00e5ff; color: #07070f; box-shadow: 0 0 30px rgba(0,229,255,0.3); }
+.big-btn.muted { border-color: #1e1e30; color: #2a2a40; }
+.big-btn.muted:hover { background: #1e1e30; color: #fff; box-shadow: none; }
+
+/* ================================================================
+   1V1 DUEL SCREENS
+   ================================================================ */
+
+/* Duel mode menu — two big option cards side by side */
+.duel-menu-grid {
+  display: flex; gap: 24px;
+}
+.duel-option-card {
+  width: 220px; padding: 32px 20px 28px;
+  background: #0c0c1a; border: 1px solid #16162c;
+  cursor: pointer; transition: all 0.22s; text-align: center;
+  position: relative; overflow: hidden;
+  clip-path: polygon(14px 0%, 100% 0%, calc(100% - 14px) 100%, 0% 100%);
+}
+.duel-option-card::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+  background: #00e5ff; transform: scaleX(0); transition: transform 0.22s; transform-origin: left;
+}
+.duel-option-card:hover {
+  background: #101020; transform: translateY(-4px);
+  border-color: #00e5ff33; box-shadow: 0 12px 50px rgba(0,229,255,0.1);
+}
+.duel-option-card:hover::after { transform: scaleX(1); }
+.duel-option-icon { font-size: 40px; margin-bottom: 16px; }
+.duel-option-name { font-size: 13px; font-weight: 900; letter-spacing: 3px; color: #fff; margin-bottom: 10px; }
+.duel-option-desc { font-family: 'Share Tech Mono', monospace; font-size: 9px; color: #333; letter-spacing: 1px; line-height: 1.8; }
+
+/* Big lobby code display */
+.lobby-code-box {
+  font-family: 'Orbitron', monospace;
+  font-size: 72px; font-weight: 900; letter-spacing: 18px;
+  color: #00e5ff;
+  text-shadow: 0 0 40px #00e5ff66;
+  margin-bottom: 8px;
+}
+.lobby-hint {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px; color: #2a2a40; letter-spacing: 4px; margin-bottom: 32px;
+}
+
+/* Status row with animated dot */
+.lobby-status-row {
+  display: flex; align-items: center; gap: 10px;
+  font-family: 'Share Tech Mono', monospace; font-size: 11px; color: #3a3a55; letter-spacing: 2px;
+}
+.lobby-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #00e5ff;
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.3; transform: scale(0.7); }
+}
+
+/* Code text input */
+.code-input {
+  font-family: 'Orbitron', monospace;
+  font-size: 48px; font-weight: 900; letter-spacing: 16px;
+  width: 280px; text-align: center;
+  background: #0c0c1a; border: 2px solid #16162c; color: #00e5ff;
+  padding: 14px 20px; outline: none;
+  clip-path: polygon(10px 0%, 100% 0%, calc(100% - 10px) 100%, 0% 100%);
+  transition: border-color 0.2s;
+}
+.code-input:focus { border-color: #00e5ff55; }
+.code-input::placeholder { color: #1e1e30; }
+
+/* Lobby player slots */
+.lobby-players {
+  display: flex; align-items: center; gap: 24px; margin-bottom: 24px;
+}
+.lobby-player-slot {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 16px 28px; background: #0c0c1a; border: 1px solid #16162c;
+}
+.lp-icon  { font-size: 28px; }
+.lp-label {
+  font-size: 10px; font-weight: 900; letter-spacing: 2px;
+  color: #fff; text-align: center; line-height: 1.5;
+}
+.lp-label small { font-family: 'Share Tech Mono', monospace; font-weight: 400; color: #2a2a40; }
+.lp-vs {
+  font-size: 24px; font-weight: 900; color: #ff4060;
+  text-shadow: 0 0 20px #ff406044; letter-spacing: 4px;
+}
+
+/* Create-lobby button (on duel-menu screen) */
+#create-lobby-btn { margin-top: 0; }
