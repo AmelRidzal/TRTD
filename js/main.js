@@ -9,6 +9,7 @@ const MAPS = {
   fortress:    MAP_FORTRESS,
   bunker:      MAP_BUNKER,
   crossroads:  MAP_CROSSROADS,
+  // ffa not in random pool — launched directly
 };
 
 const MAP_LIST = Object.values(MAPS);

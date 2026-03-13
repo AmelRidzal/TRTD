@@ -264,6 +264,210 @@ function tickGame(state, dt, now) {
   return null;
 }
 
+
+// ================================================================
+//  FFA — Free-For-All (inlined, no external require)
+// ================================================================
+const ffaLobbies = new Map();
+
+const FFA_SPEED   = 180, FFA_BSPEED = 560, FFA_FIRE_CD = 260;
+const FFA_DMG     = 34,  FFA_TANK_R = 16,  FFA_BULL_R  = 5;
+const FFA_DURATION= 300; // seconds
+const FFA_RESPAWN = 3000; // ms
+const FFA_SAFE_D  = 350;  // min distance to call a spawn "safe"
+const FFA_W = 2400, FFA_H = 1600, FFA_T = 10;
+
+const FFA_SPAWNS = [
+  {x:200,y:200},{x:1200,y:180},{x:2200,y:200},
+  {x:180,y:800},{x:600,y:500},{x:1200,y:800},
+  {x:1800,y:500},{x:2220,y:800},{x:200,y:1400},
+  {x:800,y:1300},{x:1600,y:1300},{x:2200,y:1400},
+];
+
+function buildFFAWalls() {
+  const r = [];
+  r.push({x:0,y:0,w:FFA_W,h:FFA_T},{x:0,y:FFA_H-FFA_T,w:FFA_W,h:FFA_T},
+         {x:0,y:0,w:FFA_T,h:FFA_H},{x:FFA_W-FFA_T,y:0,w:FFA_T,h:FFA_H});
+  const hSegs=[[60,400,600],[900,400,300],[1500,400,300],[1900,400,440],
+    [60,800,350],[550,800,500],[1200,800,200],[1600,800,500],[2250,800,90],
+    [60,1200,600],[900,1200,300],[1500,1200,300],[1900,1200,440]];
+  for(const[x,y,w]of hSegs)r.push({x,y,w,h:FFA_T});
+  const vSegs=[[600,60,280],[600,460,280],[600,860,280],[600,1260,280],
+    [1200,60,280],[1200,460,280],[1200,860,280],[1200,1260,280],
+    [1800,60,280],[1800,460,280],[1800,860,280],[1800,1260,280]];
+  for(const[x,y,h]of vSegs)r.push({x,y,w:FFA_T,h});
+  r.push({x:1000,y:680,w:400,h:FFA_T},{x:1000,y:920,w:400,h:FFA_T},
+         {x:1000,y:680,w:FFA_T,h:120},{x:1000,y:820,w:FFA_T,h:100},
+         {x:1400,y:680,w:FFA_T,h:120},{x:1400,y:820,w:FFA_T,h:100});
+  r.push({x:250,y:180,w:150,h:FFA_T},{x:250,y:180,w:FFA_T,h:150},
+         {x:2000,y:180,w:150,h:FFA_T},{x:2150,y:180,w:FFA_T,h:150},
+         {x:250,y:1420,w:150,h:FFA_T},{x:250,y:1270,w:FFA_T,h:150},
+         {x:2000,y:1420,w:150,h:FFA_T},{x:2150,y:1270,w:FFA_T,h:150});
+  const pillars=[[400,600],[800,220],[1200,500],[1600,220],[2000,600],
+    [400,1000],[800,1380],[1200,1100],[1600,1380],[2000,1000],[700,800],[1700,800]];
+  for(const[px,py]of pillars){
+    r.push({x:px-30,y:py-30,w:60,h:FFA_T},{x:px-30,y:py+20,w:60,h:FFA_T},
+           {x:px-30,y:py-30,w:FFA_T,h:60},{x:px+20,y:py-30,w:FFA_T,h:60});
+  }
+  return r;
+}
+const FFA_WALLS = buildFFAWalls();
+
+function ffaCircleWall(cx,cy,cr){
+  for(const w of FFA_WALLS){
+    const nx=Math.max(w.x,Math.min(cx,w.x+w.w)),ny=Math.max(w.y,Math.min(cy,w.y+w.h));
+    if((cx-nx)**2+(cy-ny)**2<cr*cr)return true;
+  }
+  return false;
+}
+
+function ffaPickSpawn(players){
+  const living=Object.values(players).filter(p=>p&&p.alive);
+  const scored=FFA_SPAWNS.map(sp=>{
+    if(!living.length)return{sp,dist:Infinity};
+    const minD=Math.min(...living.map(p=>Math.hypot(p.x-sp.x,p.y-sp.y)));
+    return{sp,dist:minD};
+  });
+  scored.sort((a,b)=>b.dist-a.dist);
+  return scored[0].dist>=FFA_SAFE_D ? scored[0].sp
+       : FFA_SPAWNS[Math.floor(Math.random()*FFA_SPAWNS.length)];
+}
+
+function ffaMakeCode(){
+  let c;
+  do{c=Array.from({length:4},()=>CHARS[Math.floor(Math.random()*CHARS.length)]).join('');}
+  while(ffaLobbies.has(c)||lobbies.has(c));
+  return c;
+}
+
+function ffaBcast(lobby,msg){
+  const d=JSON.stringify(msg);
+  for(const s of Object.values(lobby.sockets))
+    if(s&&s.readyState===WebSocket.OPEN)s.send(d);
+}
+
+function ffaMakePlayer(idx,x,y){
+  return{idx,x,y,angle:0,turretAngle:0,hp:100,alive:true,
+    kills:0,deaths:0,lastFire:0,respawnAt:null,
+    input:{up:false,down:false,left:false,right:false,fire:false,turretAngle:0}};
+}
+
+function ffaStartGame(lobby){
+  lobby.status='playing';
+  lobby.startTime=Date.now();
+  for(const idx of Object.keys(lobby.sockets).map(Number)){
+    const sp=ffaPickSpawn(lobby.players);
+    lobby.players[idx]=ffaMakePlayer(idx,sp.x,sp.y);
+  }
+  ffaBcast(lobby,{type:'ffa_start'});
+  console.log('[ffa] Started lobby',lobby.code,'with',lobby.nextIdx,'players');
+  let last=Date.now();
+  lobby.tickInterval=setInterval(()=>{
+    const now=Date.now(),dt=(now-last)/1000; last=now;
+    ffaTick(lobby,dt,now);
+    ffaSendState(lobby,now);
+    if((now-lobby.startTime)/1000>=FFA_DURATION)ffaEnd(lobby);
+  },33);
+}
+
+function ffaTick(lobby,dt,now){
+  const{players,bullets}=lobby;
+  // Respawns
+  for(const p of Object.values(players)){
+    if(!p||p.alive)continue;
+    if(p.respawnAt&&now>=p.respawnAt){
+      const sp=ffaPickSpawn(players);
+      p.x=sp.x;p.y=sp.y;p.hp=100;p.alive=true;p.respawnAt=null;
+      const s=lobby.sockets[p.idx];
+      if(s&&s.readyState===WebSocket.OPEN)s.send(JSON.stringify({type:'ffa_respawned',x:sp.x,y:sp.y}));
+    }
+  }
+  // Move
+  for(const p of Object.values(players)){
+    if(!p||!p.alive)continue;
+    const{input:inp}=p;
+    let dx=0,dy=0;
+    if(inp.up)dy-=1; if(inp.down)dy+=1;
+    if(inp.left)dx-=1; if(inp.right)dx+=1;
+    if(dx||dy){
+      const len=Math.sqrt(dx*dx+dy*dy);dx/=len;dy/=len;
+      const nx=p.x+dx*FFA_SPEED*dt,ny=p.y+dy*FFA_SPEED*dt;
+      if(!ffaCircleWall(nx,p.y,FFA_TANK_R))p.x=nx;
+      if(!ffaCircleWall(p.x,ny,FFA_TANK_R))p.y=ny;
+      p.x=Math.max(FFA_TANK_R,Math.min(FFA_W-FFA_TANK_R,p.x));
+      p.y=Math.max(FFA_TANK_R,Math.min(FFA_H-FFA_TANK_R,p.y));
+      p.angle=Math.atan2(dy,dx)*180/Math.PI+90;
+    }
+    p.turretAngle=inp.turretAngle;
+    if(inp.fire&&now-p.lastFire>=FFA_FIRE_CD){
+      p.lastFire=now;
+      const rad=(inp.turretAngle-90)*Math.PI/180;
+      bullets.push({id:lobby.nextBulletId++,owner:p.idx,
+        x:p.x+Math.cos(rad)*24,y:p.y+Math.sin(rad)*24,
+        vx:Math.cos(rad)*FFA_BSPEED,vy:Math.sin(rad)*FFA_BSPEED,born:now});
+    }
+  }
+  // Bullets
+  const alive=[];
+  for(const b of bullets){
+    if(now-b.born>2200)continue;
+    b.x+=b.vx*dt;b.y+=b.vy*dt;
+    if(b.x<0||b.x>FFA_W||b.y<0||b.y>FFA_H)continue;
+    if(ffaCircleWall(b.x,b.y,FFA_BULL_R))continue;
+    let hit=false;
+    for(const p of Object.values(players)){
+      if(!p||!p.alive||p.idx===b.owner)continue;
+      if((b.x-p.x)**2+(b.y-p.y)**2<(FFA_TANK_R+FFA_BULL_R)**2){
+        p.hp=Math.max(0,p.hp-FFA_DMG);
+        if(p.hp<=0){
+          p.alive=false;p.deaths++;p.respawnAt=now+FFA_RESPAWN;
+          const killer=players[b.owner];if(killer)killer.kills++;
+          const s=lobby.sockets[p.idx];
+          if(s&&s.readyState===WebSocket.OPEN)
+            s.send(JSON.stringify({type:'ffa_killed',respawnIn:FFA_RESPAWN}));
+        }
+        hit=true;break;
+      }
+    }
+    if(!hit)alive.push(b);
+  }
+  lobby.bullets=alive;
+}
+
+function ffaSendState(lobby,now){
+  const timeLeft=Math.max(0,FFA_DURATION-(now-lobby.startTime)/1000);
+  const msg={type:'ffa_state',timeLeft,players:{},
+    bullets:lobby.bullets.map(b=>({id:b.id,owner:b.owner,x:b.x,y:b.y}))};
+  for(const[i,p]of Object.entries(lobby.players)){
+    if(!p)continue;
+    msg.players[i]={x:p.x,y:p.y,angle:p.angle,turretAngle:p.turretAngle,
+                    hp:p.hp,alive:p.alive,kills:p.kills};
+  }
+  ffaBcast(lobby,msg);
+}
+
+function ffaEnd(lobby){
+  if(lobby.status==='over')return;
+  lobby.status='over';
+  if(lobby.tickInterval)clearInterval(lobby.tickInterval);
+  const lb=Object.values(lobby.players).filter(Boolean)
+    .sort((a,b)=>b.kills-a.kills)
+    .map(p=>({idx:p.idx,kills:p.kills,deaths:p.deaths}));
+  ffaBcast(lobby,{type:'ffa_over',leaderboard:lb});
+  ffaLobbies.delete(lobby.code);
+  console.log('[ffa] Game over',lobby.code);
+}
+
+// Stale FFA cleanup
+setInterval(()=>{
+  const cut=Date.now()-15*60*1000;
+  for(const[code,l]of ffaLobbies)
+    if(l.createdAt<cut&&l.status==='waiting'){
+      if(l.tickInterval)clearInterval(l.tickInterval);
+      ffaLobbies.delete(code);
+    }
+},60000);
+
 // ── HTTP server ───────────────────────────────────────────────────
 const server = http.createServer((req, res) => {
   // CORS for local dev
@@ -303,6 +507,39 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ── FFA API ────────────────────────────────────────────────────
+  if (req.method === 'POST' && req.url === '/api/ffa/create') {
+    const code = ffaMakeCode();
+    ffaLobbies.set(code,{code,status:'waiting',sockets:{},players:{},
+      nextIdx:0,bullets:[],nextBulletId:0,startTime:null,tickInterval:null,createdAt:Date.now()});
+    console.log('[ffa] Created lobby:',code);
+    res.writeHead(200,{'Content-Type':'application/json'});
+    res.end(JSON.stringify({ok:true,code}));
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/ffa/join') {
+    let body='';
+    req.on('data', d => body+=d);
+    req.on('end', () => {
+      try {
+        const { code } = JSON.parse(body);
+        const lobby = ffaLobbies.get((code||'').toUpperCase().trim());
+        if (!lobby || lobby.status !== 'waiting') {
+          res.writeHead(404,{'Content-Type':'application/json'});
+          res.end(JSON.stringify({ok:false,error:'FFA lobby not found or already started'}));
+          return;
+        }
+        res.writeHead(200,{'Content-Type':'application/json'});
+        res.end(JSON.stringify({ok:true,code:lobby.code,count:lobby.nextIdx}));
+      } catch(e) {
+        res.writeHead(400,{'Content-Type':'application/json'});
+        res.end(JSON.stringify({ok:false,error:'Bad request'}));
+      }
+    });
+    return;
+  }
+
   // Static files
   if (!serveStatic(req, res)) {
     res.writeHead(404); res.end('Not found: ' + req.url);
@@ -313,8 +550,46 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({server, path:'/game'});
 
 wss.on('connection', (socket, req) => {
-  const p     = new URLSearchParams(req.url.replace('/game?',''));
-  const code  = (p.get('code')||'').toUpperCase();
+  const p      = new URLSearchParams(req.url.replace('/game?',''));
+  const code   = (p.get('code')||'').toUpperCase();
+  const mode   = p.get('mode') || 'duel';
+
+  // ── FFA connection ────────────────────────────────────────────
+  if (mode === 'ffa') {
+    const ffaLobby = ffaLobbies.get(code);
+    if (!ffaLobby || ffaLobby.nextIdx >= 8) { socket.close(4000,'FFA lobby not found or full'); return; }
+    const myIdx = ffaLobby.nextIdx++;
+    ffaLobby.sockets[myIdx] = socket;
+    wsend(socket,{type:'ffa_joined',playerIndex:myIdx,code});
+    ffaBcast(ffaLobby,{type:'ffa_lobby_update',count:ffaLobby.nextIdx});
+    console.log(`[ffa-ws] Player ${myIdx} joined lobby ${code} (${ffaLobby.nextIdx}/8)`);
+
+    socket.on('message', raw => {
+      let msg; try{msg=JSON.parse(raw);}catch{return;}
+      const lob = ffaLobbies.get(code); if(!lob)return;
+      if(msg.type==='ffa_start_game' && myIdx===0 && lob.status==='waiting' && lob.nextIdx>=2){
+        ffaStartGame(lob);
+      }
+      if(msg.type==='ffa_input' && lob.players[myIdx]){
+        Object.assign(lob.players[myIdx].input, msg.input);
+      }
+    });
+
+    socket.on('close', ()=>{
+      console.log(`[ffa-ws] Player ${myIdx} left ${code}`);
+      const lob=ffaLobbies.get(code); if(!lob)return;
+      delete lob.sockets[myIdx];
+      if(lob.players[myIdx]) lob.players[myIdx].alive=false;
+      if(myIdx===0 && lob.status==='waiting'){
+        ffaBcast(lob,{type:'ffa_disbanded'});
+        if(lob.tickInterval)clearInterval(lob.tickInterval);
+        ffaLobbies.delete(code);
+      }
+    });
+    return;
+  }
+
+  // ── Duel connection ───────────────────────────────────────────
   const idx   = parseInt(p.get('player')||'0',10);
   const lobby = getLobby(code);
 

@@ -12,6 +12,10 @@ const SCREENS = [
   'screen-duel-join',
   'screen-duel-lobby',
   'screen-duel-result',
+  'screen-ffa-menu',
+  'screen-ffa-join',
+  'screen-ffa-lobby',
+  'screen-ffa-result',
 ];
 
 // ── Screen switching ──────────────────────────────────────────────
@@ -314,6 +318,7 @@ function applyScale() {
   const left    = (window.innerWidth  - scaledW) / 2;
   const top     = (window.innerHeight - scaledH) / 2;
 
+  window._cssScale = scale;
   wrapper.style.width     = totalW + 'px';
   wrapper.style.height    = totalH + 'px';
   wrapper.style.transform = `scale(${scale})`;
@@ -325,3 +330,159 @@ function applyScale() {
   applyScale();
   window.addEventListener('resize', applyScale);
 })();
+
+
+// ================================================================
+//  FFA — Free-For-All UI
+// ================================================================
+let ffaLobbyCode = null;
+
+async function createFFALobby() {
+  try {
+    const r = await fetch(`${SERVER_HTTP}/api/ffa/create`, {method:'POST'});
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error);
+    ffaLobbyCode = d.code;
+    document.getElementById('ffa-lobby-code-big').textContent = d.code;
+    showScreen('screen-ffa-lobby');
+    _connectFFASocket(d.code);
+  } catch(e) {
+    alert('Could not create FFA lobby: ' + e.message);
+  }
+}
+
+async function joinFFALobbyUI() {
+  const code = document.getElementById('ffa-join-code-input').value.trim().toUpperCase();
+  if (code.length !== 4) { alert('Enter a 4-letter code'); return; }
+  try {
+    const r = await fetch(`${SERVER_HTTP}/api/ffa/join`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({code}),
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error);
+    ffaLobbyCode = d.code;
+    document.getElementById('ffa-lobby-code-big').textContent = d.code;
+    showScreen('screen-ffa-lobby');
+    _connectFFASocket(d.code);
+  } catch(e) {
+    alert('Could not join: ' + e.message);
+  }
+}
+
+function _connectFFASocket(code) {
+  // Reuse duelSocket global so ffa-scene.js can access it
+  if (duelSocket) { try{duelSocket.close();}catch{} }
+  duelSocket = new WebSocket(`${SERVER_WS}/game?code=${code}&mode=ffa`);
+
+  duelSocket.onmessage = evt => {
+    let m; try{m=JSON.parse(evt.data);}catch{return;}
+
+    if (m.type === 'ffa_joined') {
+      duelPlayerIndex = m.playerIndex;
+      const isHost = m.playerIndex === 0;
+      document.getElementById('ffa-start-btn').style.display = isHost ? 'block' : 'none';
+      _ffaUpdateSlots(m.playerIndex + 1);
+    }
+    if (m.type === 'ffa_lobby_update') {
+      _ffaUpdateSlots(m.count);
+      const canStart = m.count >= 2;
+      const btn = document.getElementById('ffa-start-btn');
+      if (btn) btn.textContent = `▶ START (${m.count} players)`;
+      document.getElementById('ffa-lobby-status').textContent =
+        canStart ? `${m.count} players ready — host can start!`
+                 : `Waiting for players… (${m.count}/8, need 2+)`;
+    }
+    if (m.type === 'ffa_start') {
+      _launchFFAGame();
+    }
+    if (m.type === 'ffa_disbanded') {
+      alert('The host disbanded the lobby.');
+      showScreen('screen-main');
+    }
+  };
+  duelSocket.onerror = () => alert('WebSocket error — is the server running?');
+}
+
+function _ffaUpdateSlots(count) {
+  const list = document.getElementById('ffa-player-list');
+  if (!list) return;
+  list.innerHTML = '';
+  const cols = ['#00e5ff','#ff4060','#44ff88','#ffaa00','#aa44ff','#ff44cc','#ffff44','#44aaff'];
+  for (let i=0;i<count;i++) {
+    const row = document.createElement('div');
+    row.className = 'ffa-player-row';
+    row.innerHTML = `<span class="ffa-slot-dot" style="background:${cols[i]||'#555'}"></span>Player ${i+1}${i===duelPlayerIndex?' (you)':''}`;
+    list.appendChild(row);
+  }
+  if (count < 8) {
+    const row = document.createElement('div');
+    row.className = 'ffa-player-row waiting';
+    row.innerHTML = '<span class="ffa-slot-dot"></span>Waiting for players…';
+    list.appendChild(row);
+  }
+}
+
+function startFFAGame() {
+  if (!duelSocket || duelSocket.readyState !== WebSocket.OPEN) return;
+  duelSocket.send(JSON.stringify({type:'ffa_start_game'}));
+}
+
+function _launchFFAGame() {
+  document.getElementById('overlay').classList.add('hidden');
+  if (phaserGame) { try { phaserGame.destroy(true); } catch {} phaserGame = null; }
+  activeMap = MAP_FFA;
+
+  // Buffer any state messages that arrive before the scene's create() runs.
+  // The scene will drain this queue in its first update() cycle.
+  window._ffaMsgQueue = [];
+  const origOnMsg = duelSocket.onmessage;
+  duelSocket.onmessage = evt => {
+    let m; try { m = JSON.parse(evt.data); } catch { return; }
+    window._ffaMsgQueue.push(m);
+  };
+
+  phaserGame = new Phaser.Game({
+    type: Phaser.AUTO,
+    width: MAP_FFA.width,
+    height: MAP_FFA.height,
+    parent: 'phaser-container',
+    backgroundColor: '#06060f',
+    physics: { default: 'arcade', arcade: { gravity: { y: 0 }, debug: false } },
+    scene: [FFAScene],
+    audio: { noAudio: true },
+  });
+  setTimeout(() => applyScale(), 100);
+}
+
+function copyFFACode() {
+  if (!ffaLobbyCode) return;
+  const lbl = document.getElementById('ffa-copy-label');
+  navigator.clipboard.writeText(ffaLobbyCode).then(()=>{
+    lbl.textContent='✓ COPIED!';
+    setTimeout(()=>lbl.textContent='⎘ COPY CODE',2000);
+  }).catch(()=>{
+    prompt('Copy lobby code:', ffaLobbyCode);
+  });
+}
+
+function showFFAResult(leaderboard, disbanded) {
+  document.getElementById('overlay').classList.remove('hidden');
+  if (disbanded) {
+    document.getElementById('ffa-result-title').textContent = 'DISCONNECTED';
+    document.getElementById('ffa-result-sub').textContent   = 'A player disconnected';
+    document.getElementById('ffa-leaderboard').innerHTML    = '';
+  } else {
+    document.getElementById('ffa-result-title').textContent = 'TIME UP';
+    document.getElementById('ffa-result-sub').textContent   = 'FINAL STANDINGS';
+    const cols=['#00e5ff','#ff4060','#44ff88','#ffaa00','#aa44ff','#ff44cc','#ffff44','#44aaff'];
+    document.getElementById('ffa-leaderboard').innerHTML = (leaderboard||[]).map((e,rank)=>`
+      <div class="ffa-lb-row" style="color:${cols[e.idx]||'#fff'}">
+        <span class="ffa-lb-rank">${rank===0?'🏆':rank+1+'.'}</span>
+        <span class="ffa-lb-name">Player ${e.idx+1}${e.idx===duelPlayerIndex?' (you)':''}</span>
+        <span class="ffa-lb-kills">${e.kills}K</span>
+        <span class="ffa-lb-deaths">${e.deaths}D</span>
+      </div>`).join('');
+  }
+  showScreen('screen-ffa-result');
+}

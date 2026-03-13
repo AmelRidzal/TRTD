@@ -60,11 +60,10 @@
               <div class="mode-desc">Challenge a friend<br>online. Create or join<br>a private lobby.</div>
             </div>
 
-            <div class="mode-card locked">
-              <div class="mode-badge">COMING SOON</div>
-              <span class="mode-icon">🏆</span>
-              <div class="mode-name">RANKED</div>
-              <div class="mode-desc">Competitive online<br>matchmaking with<br>ELO leaderboard</div>
+            <div class="mode-card" onclick="showScreen('screen-ffa-menu')">
+              <span class="mode-icon">💥</span>
+              <div class="mode-name">FREE FOR ALL</div>
+              <div class="mode-desc">2–8 players, 5 min<br>timer. Most kills<br>wins. Respawn on.</div>
             </div>
           </div>
         </div>
@@ -223,6 +222,65 @@
           </div>
         </div>
 
+
+        <!-- ── FFA: Mode Select ─────────────────────────────── -->
+        <div id="screen-ffa-menu" class="screen">
+          <button class="back-btn" onclick="showScreen('screen-main')">← BACK</button>
+          <div class="screen-eyebrow">FREE FOR ALL</div>
+          <div class="screen-heading">ONLINE BATTLE</div>
+          <div class="duel-menu-grid">
+            <div class="duel-option-card" onclick="createFFALobby()">
+              <div class="duel-option-icon">🛡️</div>
+              <div class="duel-option-name">CREATE LOBBY</div>
+              <div class="duel-option-desc">Host a game<br>Up to 8 players<br>Share the code</div>
+            </div>
+            <div class="duel-option-card" onclick="showScreen('screen-ffa-join')">
+              <div class="duel-option-icon">🔗</div>
+              <div class="duel-option-name">JOIN LOBBY</div>
+              <div class="duel-option-desc">Enter a lobby code<br>from the host</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── FFA: Join (enter code) ────────────────────────── -->
+        <div id="screen-ffa-join" class="screen">
+          <button class="back-btn" onclick="showScreen('screen-ffa-menu')">← BACK</button>
+          <div class="screen-eyebrow">FREE FOR ALL</div>
+          <div class="screen-heading">ENTER CODE</div>
+          <input id="ffa-join-code-input" class="code-input" type="text"
+            maxlength="4" placeholder="XXXX"
+            oninput="this.value=this.value.toUpperCase()"/>
+          <button class="big-btn" style="margin-top:24px" onclick="joinFFALobbyUI()">JOIN</button>
+        </div>
+
+        <!-- ── FFA: Lobby (waiting room) ─────────────────────── -->
+        <div id="screen-ffa-lobby" class="screen">
+          <button class="back-btn" onclick="showScreen('screen-main')">← CANCEL</button>
+          <div class="screen-eyebrow">FFA LOBBY</div>
+          <div id="ffa-lobby-code-big" class="lobby-code-box" style="font-size:52px;margin-bottom:8px">····</div>
+          <button class="copy-code-btn" onclick="copyFFACode()">
+            <span id="ffa-copy-label">⎘ COPY CODE</span>
+          </button>
+          <div class="ffa-player-list" id="ffa-player-list"></div>
+          <div class="lobby-status-row" style="margin:14px 0">
+            <div class="lobby-dot waiting"></div>
+            <span id="ffa-lobby-status">Waiting for players… (need 2+)</span>
+          </div>
+          <button id="ffa-start-btn" class="big-btn" style="display:none"
+            onclick="startFFAGame()">▶ START</button>
+        </div>
+
+        <!-- ── FFA: Result / Leaderboard ─────────────────────── -->
+        <div id="screen-ffa-result" class="screen">
+          <div class="result-title" id="ffa-result-title">TIME UP</div>
+          <div class="result-sub"  id="ffa-result-sub">FINAL STANDINGS</div>
+          <div class="ffa-leaderboard" id="ffa-leaderboard"></div>
+          <div class="btn-row" style="margin-top:24px">
+            <button class="big-btn" onclick="showScreen('screen-ffa-menu')">↺ PLAY AGAIN</button>
+            <button class="big-btn muted" onclick="showScreen('screen-main')">⌂ MENU</button>
+          </div>
+        </div>
+
     </div><!-- /#overlay -->
 
     <div id="controls-hint">
@@ -243,8 +301,10 @@
 <script src="js/maps/map-fortress.js"></script>
 <script src="js/maps/map-bunker.js"></script>
 <script src="js/maps/map-crossroads.js"></script>
+<script src="js/maps/map-ffa.js"></script>
 <script src="js/modes/wave-scene.js"></script>
 <script src="js/modes/duel-scene.js"></script>
+<script src="js/modes/ffa-scene.js"></script>
 <script src="js/main.js"></script>
 
 </body>

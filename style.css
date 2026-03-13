@@ -370,3 +370,45 @@ html, body {
 @keyframes pulse-opacity {
   0%, 100% { opacity: 1; } 50% { opacity: 0.45; }
 }
+
+/* ================================================================
+   FFA — Free-For-All UI
+   ================================================================ */
+
+/* Player list in FFA lobby */
+.ffa-player-list {
+  display: flex; flex-direction: column; gap: 6px;
+  margin: 14px 0; min-width: 260px;
+}
+.ffa-player-row {
+  display: flex; align-items: center; gap: 10px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 13px; color: #aaaacc;
+  padding: 6px 12px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 4px;
+  border-left: 2px solid #1e1e40;
+}
+.ffa-player-row.waiting { color: #333355; border-left-color: #111130; }
+.ffa-slot-dot {
+  display: inline-block; width: 8px; height: 8px;
+  border-radius: 50%; background: #333355;
+  flex-shrink: 0;
+}
+
+/* FFA final leaderboard */
+.ffa-leaderboard {
+  display: flex; flex-direction: column; gap: 6px;
+  margin: 16px 0; min-width: 280px;
+}
+.ffa-lb-row {
+  display: flex; align-items: center; gap: 10px;
+  font-family: 'Share Tech Mono', monospace; font-size: 14px;
+  padding: 8px 14px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 4px;
+}
+.ffa-lb-rank  { font-size: 15px; min-width: 28px; }
+.ffa-lb-name  { flex: 1; }
+.ffa-lb-kills { font-weight: bold; min-width: 36px; text-align: right; }
+.ffa-lb-deaths{ color: #666688; font-size: 11px; min-width: 32px; text-align: right; }
