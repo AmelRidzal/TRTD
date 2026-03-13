@@ -13,4 +13,6 @@ function refreshHUD() {
   document.getElementById('hp-val').textContent    = Math.max(0, hudHp);
   document.getElementById('wave-num').textContent  = hudWave;
   document.getElementById('score-val').textContent = hudScore;
+  const ptEl = document.getElementById('points-val');
+  if (ptEl) ptEl.textContent = hudPoints;
 }

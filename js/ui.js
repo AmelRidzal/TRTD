@@ -368,9 +368,14 @@ function applyScale(overrideW, overrideH) {
 // ================================================================
 let ffaLobbyCode = null;
 
+let ffaLobbyMode = 'standard'; // set by mode selector in lobby screen
+
 async function createFFALobby() {
   try {
-    const r = await fetch(`${SERVER_HTTP}/api/ffa/create`, {method:'POST'});
+    const r = await fetch(`${SERVER_HTTP}/api/ffa/create`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({mode: ffaLobbyMode}),
+    });
     const d = await r.json();
     if (!d.ok) throw new Error(d.error);
     ffaLobbyCode = d.code;
@@ -415,12 +420,13 @@ function _connectFFASocket(code) {
 
     if (m.type === 'ffa_joined') {
       duelPlayerIndex = m.playerIndex;
+      if (m.mode) ffaLobbyMode = m.mode;
       if (m.inProgress) {
-        // Game already running — skip lobby, launch straight into the game
-        // ffa_start will follow immediately from server to kick off the scene
         document.getElementById('ffa-lobby-status').textContent = 'Joining game in progress...';
       } else {
         const isHost = m.playerIndex === 0;
+        // Non-hosts can see mode but can't change it
+        _ffaUpdateModeDisplay(m.mode, isHost);
         document.getElementById('ffa-start-btn').style.display = isHost ? 'block' : 'none';
         _ffaUpdateSlots(m.playerIndex + 1);
       }
@@ -435,6 +441,7 @@ function _connectFFASocket(code) {
                  : `Waiting for players… (${m.count}/8, need 2+)`;
     }
     if (m.type === 'ffa_start') {
+      if (m.mode) ffaLobbyMode = m.mode;
       _launchFFAGame();
     }
     if (m.type === 'ffa_disbanded') {
@@ -443,6 +450,22 @@ function _connectFFASocket(code) {
     }
   };
   duelSocket.onerror = () => alert('WebSocket error — is the server running?');
+}
+
+function _ffaUpdateModeDisplay(mode, isHost) {
+  const sel = document.getElementById('ffa-mode-selector');
+  if (!sel) return;
+  sel.style.display = isHost ? '' : 'none';
+  const lbl = document.getElementById('ffa-mode-label');
+  if (lbl) lbl.textContent = (mode||'standard') === 'rtd' ? '🎲 ROLL THE DICE' : '⚔️ STANDARD';
+  // Sync selector to actual mode
+  const btns = sel.querySelectorAll('.mode-toggle-btn');
+  btns.forEach(b => b.classList.toggle('active', b.dataset.mode === (mode||'standard')));
+}
+
+function selectFFAMode(mode) {
+  ffaLobbyMode = mode;
+  _ffaUpdateModeDisplay(mode, true);
 }
 
 function _ffaUpdateSlots(count) {

@@ -308,6 +308,22 @@ function buildFFAWalls() {
 }
 const FFA_WALLS = buildFFAWalls();
 
+// ================================================================
+//  RTD — Roll The Dice effect definitions (mirrors rtd-powerups.js)
+// ================================================================
+const RTD_EFFECTS = [
+  { id:'double_fire', duration:15000 },
+  { id:'double_hp',   duration:15000 },
+  { id:'wallhack',    duration:15000 },
+  { id:'bouncy',      duration:15000 },
+  { id:'half_fire',   duration:15000 },
+  { id:'half_speed',  duration:15000 },
+];
+const RTD_POINTS_PER_KILL = 10; // score per kill (use 3 in prod)
+const RTD_ROLL_COST      = 10; // points needed to roll
+
+
+
 function ffaCircleWall(cx,cy,cr){
   for(const w of FFA_WALLS){
     const nx=Math.max(w.x,Math.min(cx,w.x+w.w)),ny=Math.max(w.y,Math.min(cy,w.y+w.h));
@@ -347,8 +363,9 @@ function ffaBcast(lobby,msg){
 
 function ffaMakePlayer(idx,x,y){
   return{idx,x,y,angle:0,turretAngle:0,hp:100,alive:true,
-    kills:0,deaths:0,lastFire:0,respawnAt:null,
-    input:{up:false,down:false,left:false,right:false,fire:false,turretAngle:0}};
+    kills:0,deaths:0,points:0,lastFire:0,respawnAt:null,
+    effect:null,effectEnd:0,
+    input:{up:false,down:false,left:false,right:false,fire:false,turretAngle:0,roll:false}};
 }
 
 function ffaStartGame(lobby){
@@ -358,7 +375,7 @@ function ffaStartGame(lobby){
     const sp=ffaPickSpawn(lobby.players);
     lobby.players[idx]=ffaMakePlayer(idx,sp.x,sp.y);
   }
-  ffaBcast(lobby,{type:'ffa_start'});
+  ffaBcast(lobby,{type:'ffa_start',mode:lobby.mode});
   console.log('[ffa] Started lobby',lobby.code,'with',lobby.nextIdx,'players');
   let last=Date.now();
   lobby.tickInterval=setInterval(()=>{
@@ -376,10 +393,31 @@ function ffaTick(lobby,dt,now){
     if(p.respawnAt&&now>=p.respawnAt){
       const sp=ffaPickSpawn(players);
       p.x=sp.x;p.y=sp.y;p.hp=100;p.alive=true;p.respawnAt=null;
+      p.effect=null;p.effectEnd=0;
       const s=lobby.sockets[p.idx];
       if(s&&s.readyState===WebSocket.OPEN)s.send(JSON.stringify({type:'ffa_respawned',x:sp.x,y:sp.y}));
     }
   }
+  // ── RTD: handle roll requests ──────────────────────────────────
+  if(lobby.mode==='rtd'){
+    for(const p of Object.values(players)){
+      if(!p||!p.alive)continue;
+      if(p.input.roll){
+        p.input.roll=false;
+        if(p.points >= RTD_ROLL_COST && !p.effect){
+          p.points -= RTD_ROLL_COST;
+          const eff = RTD_EFFECTS[Math.floor(Math.random()*RTD_EFFECTS.length)];
+          p.effect    = eff.id;
+          p.effectEnd = now + eff.duration;
+          if(eff.id==='double_hp') p.hp = Math.min(p.hp*2, 200);
+          ffaBcast(lobby,{type:'rtd_rolled',playerIdx:p.idx,effectId:eff.id,duration:eff.duration});
+        } else if(!p.effect){
+          wsend(lobby.sockets[p.idx],{type:'rtd_no_points',have:p.points,need:RTD_ROLL_COST});
+        }
+      }
+    }
+  }
+
   for(const p of Object.values(players)){
     if(!p||!p.alive)continue;
     const{input:inp}=p;
@@ -388,7 +426,8 @@ function ffaTick(lobby,dt,now){
     if(inp.left)dx-=1; if(inp.right)dx+=1;
     if(dx||dy){
       const len=Math.sqrt(dx*dx+dy*dy);dx/=len;dy/=len;
-      const nx=p.x+dx*FFA_SPEED*dt,ny=p.y+dy*FFA_SPEED*dt;
+      const spd = p.effect==='half_speed' ? FFA_SPEED*0.5 : FFA_SPEED;
+      const nx=p.x+dx*spd*dt,ny=p.y+dy*spd*dt;
       if(!ffaCircleWall(nx,p.y,FFA_TANK_R))p.x=nx;
       if(!ffaCircleWall(p.x,ny,FFA_TANK_R))p.y=ny;
       p.x=Math.max(FFA_TANK_R,Math.min(FFA_W-FFA_TANK_R,p.x));
@@ -410,7 +449,18 @@ function ffaTick(lobby,dt,now){
     if(now-b.born>2200)continue;
     b.x+=b.vx*dt;b.y+=b.vy*dt;
     if(b.x<0||b.x>FFA_W||b.y<0||b.y>FFA_H)continue;
-    if(ffaCircleWall(b.x,b.y,FFA_BULL_R))continue;
+    if(!b.wallhack && ffaCircleWall(b.x,b.y,FFA_BULL_R)){
+      if(b.bouncy){
+        // Simple bounce: reverse whichever axis is closer to a wall
+        const testX = ffaCircleWall(b.x+b.vx*0.033,b.y,FFA_BULL_R);
+        const testY = ffaCircleWall(b.x,b.y+b.vy*0.033,FFA_BULL_R);
+        if(testX) b.vx=-b.vx;
+        if(testY) b.vy=-b.vy;
+        if(!testX&&!testY){b.vx=-b.vx;b.vy=-b.vy;}
+        b.bounces=(b.bounces||0)+1;
+        if(b.bounces>6)continue; // max bounces
+      } else { continue; }
+    }
     let hit=false;
     for(const p of Object.values(players)){
       if(!p||!p.alive||p.idx===b.owner)continue;
@@ -418,7 +468,11 @@ function ffaTick(lobby,dt,now){
         p.hp=Math.max(0,p.hp-FFA_DMG);
         if(p.hp<=0){
           p.alive=false;p.deaths++;p.respawnAt=now+FFA_RESPAWN;
-          const killer=players[b.owner];if(killer)killer.kills++;
+          const killer=players[b.owner];
+          if(killer){
+            killer.kills++;
+            killer.points += RTD_POINTS_PER_KILL;
+          }
           const s=lobby.sockets[p.idx];
           if(s&&s.readyState===WebSocket.OPEN)
             s.send(JSON.stringify({type:'ffa_killed',respawnIn:FFA_RESPAWN}));
@@ -438,7 +492,9 @@ function ffaSendState(lobby,now){
   for(const[i,p]of Object.entries(lobby.players)){
     if(!p)continue;
     msg.players[i]={x:p.x,y:p.y,angle:p.angle,turretAngle:p.turretAngle,
-                    hp:p.hp,alive:p.alive,kills:p.kills};
+                    hp:p.hp,alive:p.alive,kills:p.kills,points:p.points||0,
+                    effect:p.effect||null,
+                    canRoll: lobby.mode==='rtd' && (p.points>=RTD_ROLL_COST) && !p.effect};
   }
   ffaBcast(lobby,msg);
 }
@@ -508,12 +564,18 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.method === 'POST' && req.url === '/api/ffa/create') {
-    const code = ffaMakeCode();
-    ffaLobbies.set(code,{code,status:'waiting',sockets:{},players:{},
-      nextIdx:0,bullets:[],nextBulletId:0,startTime:null,tickInterval:null,createdAt:Date.now()});
-    console.log('[ffa] Created lobby:',code);
-    res.writeHead(200,{'Content-Type':'application/json'});
-    res.end(JSON.stringify({ok:true,code}));
+    let body2='';
+    req.on('data', d => body2+=d);
+    req.on('end', () => {
+      let reqMode='standard';
+      try{ const parsed=JSON.parse(body2); reqMode=parsed.mode||'standard'; }catch{}
+      const code = ffaMakeCode();
+      ffaLobbies.set(code,{code,status:'waiting',mode:reqMode,sockets:{},players:{},
+        nextIdx:0,bullets:[],nextBulletId:0,startTime:null,tickInterval:null,createdAt:Date.now()});
+      console.log('[ffa] Created lobby:',code,'mode:',reqMode);
+      res.writeHead(200,{'Content-Type':'application/json'});
+      res.end(JSON.stringify({ok:true,code,mode:reqMode}));
+    });
     return;
   }
 
@@ -565,7 +627,7 @@ wss.on('connection', (socket, req) => {
     const myIdx = ffaLobby.nextIdx++;
     ffaLobby.sockets[myIdx] = socket;
     const inProgress = ffaLobby.status === 'playing';
-    wsend(socket,{type:'ffa_joined',playerIndex:myIdx,code,inProgress});
+    wsend(socket,{type:'ffa_joined',playerIndex:myIdx,code,inProgress,mode:ffaLobby.mode});
     ffaBcast(ffaLobby,{type:'ffa_lobby_update',count:ffaLobby.nextIdx});
     console.log(`[ffa-ws] Player ${myIdx} joined lobby ${code} (${ffaLobby.nextIdx}/8)${inProgress?' [mid-game]':''}`);
 
@@ -573,7 +635,7 @@ wss.on('connection', (socket, req) => {
     if (inProgress) {
       const sp = ffaPickSpawn(ffaLobby.players);
       ffaLobby.players[myIdx] = ffaMakePlayer(myIdx, sp.x, sp.y);
-      wsend(socket, {type:'ffa_start'});
+      wsend(socket, {type:'ffa_start',mode:ffaLobby.mode});
     }
 
     socket.on('message', raw => {
@@ -584,6 +646,9 @@ wss.on('connection', (socket, req) => {
       }
       if(msg.type==='ffa_input' && lob.players[myIdx]){
         Object.assign(lob.players[myIdx].input, msg.input);
+      }
+      if(msg.type==='ffa_roll' && lob.players[myIdx]){
+        lob.players[myIdx].input.roll = true;
       }
     });
 

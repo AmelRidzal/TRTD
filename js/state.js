@@ -12,8 +12,9 @@ let activeDiff = 'normal';
 // HUD values — written by the Phaser scene, read by hud.js
 let hudHp    = MAX_HP;
 let hudWave  = 1;
-let hudScore = 0;
-let hudKills = 0;
+let hudScore  = 0;
+let hudKills  = 0;
+let hudPoints = 0; // FFA RTD points (kills × 10)
 
 // ── Duel / 1v1 state ─────────────────────────────────────────────
 // The active WebSocket to the game server

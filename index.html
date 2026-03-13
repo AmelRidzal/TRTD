@@ -23,8 +23,14 @@
       <div id="wave-num">—</div>
     </div>
     <div class="hud-block right">
-      <span class="hud-label">SCORE · KILLS</span>
-      <span class="hud-value" id="score-val">0</span>
+      <div class="hud-stat-row">
+        <span class="hud-label" style="min-width:40px">KILLS</span>
+        <span class="hud-value" id="score-val">0</span>
+      </div>
+      <div class="hud-stat-row" id="hud-points-block" style="display:none">
+        <span class="hud-label" style="min-width:40px;color:#ffff44">POINTS</span>
+        <span class="hud-value" id="points-val" style="color:#ffff44">0</span>
+      </div>
     </div>
   </div>
 
@@ -263,6 +269,23 @@
           <button class="copy-code-btn" onclick="copyFFACode()">
             <span id="ffa-copy-label">⎘ COPY CODE</span>
           </button>
+          <!-- Mode selector — host only, hidden for guests via JS -->
+          <div id="ffa-mode-selector" style="margin:10px 0 4px">
+            <div style="font-size:9px;letter-spacing:3px;color:#2a2a40;font-family:'Share Tech Mono',monospace;margin-bottom:6px">GAME MODE</div>
+            <div style="display:flex;gap:8px;justify-content:center">
+              <button class="mode-toggle-btn active" data-mode="standard"
+                onclick="selectFFAMode('standard')">
+                ⚔️ STANDARD
+              </button>
+              <button class="mode-toggle-btn" data-mode="rtd"
+                onclick="selectFFAMode('rtd')">
+                🎲 ROLL THE DICE
+              </button>
+            </div>
+          </div>
+          <!-- Mode label for guests -->
+          <div id="ffa-mode-label" style="display:none;font-size:11px;color:#aaa;font-family:'Share Tech Mono',monospace;margin:6px 0"></div>
+
           <div class="ffa-player-list" id="ffa-player-list"></div>
           <div class="lobby-status-row" style="margin:14px 0">
             <div class="lobby-dot waiting"></div>
@@ -306,6 +329,7 @@
 <script src="js/maps/map-ffa.js"></script>
 <script src="js/modes/wave-scene.js"></script>
 <script src="js/modes/duel-scene.js"></script>
+<script src="js/rtd-powerups.js"></script>
 <script src="js/modes/ffa-scene.js"></script>
 <script src="js/main.js"></script>
 

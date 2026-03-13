@@ -415,3 +415,33 @@ html, body {
 .ffa-lb-name  { flex: 1; }
 .ffa-lb-kills { font-weight: bold; min-width: 36px; text-align: right; }
 .ffa-lb-deaths{ color: #666688; font-size: 11px; min-width: 32px; text-align: right; }
+
+/* ── RTD mode toggle buttons ── */
+.mode-toggle-btn {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  padding: 6px 14px;
+  background: #111122;
+  border: 1px solid #2a2a50;
+  color: #aaa;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.mode-toggle-btn.active {
+  background: #1a1a40;
+  border-color: #00e5ff;
+  color: #00e5ff;
+}
+.mode-toggle-btn:hover:not(.active) {
+  border-color: #4444aa;
+  color: #cccccc;
+}
+
+/* Kills + Points rows in HUD right block */
+.hud-stat-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  justify-content: flex-end;
+}

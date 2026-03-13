@@ -3,7 +3,7 @@
 // ================================================================
 
 const PLAYER_COLS = [
-  0x00e5ff, // 0 cyan  (you)
+  0x00e5ff, // 0 cyan
   0xff4060, // 1 red
   0x44ff88, // 2 green
   0xffaa00, // 3 orange
@@ -27,7 +27,12 @@ class FFAScene extends Phaser.Scene {
     this.parts    = [];
     this.isOver   = false;
 
-    // Raw Phaser-canvas pointer coords (NOT CSS-scaled coords)
+    // RTD state
+    this.isRTD           = false; // set properly in first update() once ffaLobbyMode is confirmed
+    this.canRoll         = false;
+    this._diceAnimActive = false;
+    this.rollPulseTween  = null;
+
     this.ptrX = this.scale.width  / 2;
     this.ptrY = this.scale.height / 2;
 
@@ -36,8 +41,6 @@ class FFAScene extends Phaser.Scene {
     makeTextures(this);
     this.walls = MAP_FFA.build(this);
 
-    // ── Camera ───────────────────────────────────────────────────
-    // setBounds lets Phaser clamp scrollX/Y automatically at edges
     this.cameras.main.setZoom(1.5);
     this.cameras.main.centerOn(MAP_FFA.width / 2, MAP_FFA.height / 2);
 
@@ -54,7 +57,6 @@ class FFAScene extends Phaser.Scene {
       };
       this.sock.onclose = () => { if (!this.isOver) showFFAResult(null, true); };
 
-      // Drain any messages that arrived between _launchFFAGame() and create()
       if (window._ffaMsgQueue) {
         window._ffaMsgQueue.forEach(m => this._onMsg(m));
         window._ffaMsgQueue = null;
@@ -93,6 +95,39 @@ class FFAScene extends Phaser.Scene {
       color: '#00e5ff55', letterSpacing: 10,
     }).setOrigin(0.5).setScrollFactor(0).setDepth(90);
     this.time.delayedCall(3000, () => wz.setVisible(false));
+
+    // ── RTD-only HUD elements ────────────────────────────────────
+    if (this.isRTD) {
+      this.add.text(8, 8, '🎲 RTD', {
+        fontFamily: 'Share Tech Mono', fontSize: '9px',
+        color: '#aa44ff', stroke: '#000', strokeThickness: 3,
+      }).setOrigin(0, 0).setScrollFactor(0).setDepth(90);
+
+      // Pulsing "SPACE to roll" prompt at bottom
+      this.rollPrompt = this.add.text(sw / 2, sh - 28, '[ Q ]  ROLL THE DICE  (10 pts)', {
+        fontFamily: 'Orbitron', fontSize: '13px', fontStyle: 'bold',
+        color: '#ffff44', stroke: '#000', strokeThickness: 4,
+      }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(95).setVisible(false);
+
+      // Small active-effect label under the timer
+      this.effectIndicator = this.add.text(sw / 2, 36, '', {
+        fontFamily: 'Share Tech Mono', fontSize: '9px',
+        color: '#ffff44', stroke: '#000', strokeThickness: 2,
+      }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(90).setVisible(false);
+
+      // Effect banner (floats up after rolling)
+      this.effectBanner = this.add.text(sw / 2, sh / 2 - 80, '', {
+        fontFamily: 'Orbitron', fontSize: '18px', fontStyle: 'bold',
+        color: '#ffffff', stroke: '#000', strokeThickness: 5, align: 'center',
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(96).setVisible(false);
+
+      // Dice overlay
+      this.diceOverlay = this.add.graphics().setScrollFactor(0).setDepth(97).setVisible(false);
+      this.diceTxt = this.add.text(sw / 2, sh / 2, '', {
+        fontFamily: 'Orbitron', fontSize: '52px', fontStyle: 'bold',
+        color: '#ffffff', stroke: '#000', strokeThickness: 6,
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(98).setVisible(false);
+    }
   }
 
   // ── Input ────────────────────────────────────────────────────────
@@ -103,14 +138,10 @@ class FFAScene extends Phaser.Scene {
       down:  kb.addKey('S'),
       left:  kb.addKey('A'),
       right: kb.addKey('D'),
+      q: kb.addKey('Q'),
     };
 
-    // Store Phaser canvas-space pointer (p.x/p.y are already in canvas px,
-    // unaffected by CSS transform — Phaser handles that internally).
-    this.input.on('pointermove', p => {
-      this.ptrX = p.x;
-      this.ptrY = p.y;
-    });
+    this.input.on('pointermove', p => { this.ptrX = p.x; this.ptrY = p.y; });
     this.input.on('pointerdown', p => { if (p.leftButtonDown()) this.fireHeld = true; });
     this.input.on('pointerup',   () => { this.fireHeld = false; });
   }
@@ -120,7 +151,11 @@ class FFAScene extends Phaser.Scene {
     switch (m.type) {
       case 'ffa_state':
         this.state = m;
+        if (this.isRTD && m.players && m.players[this.myIdx]) {
+          this.canRoll = !!m.players[this.myIdx].canRoll;
+        }
         break;
+
       case 'ffa_killed':
         this.respTxt.setText('DESTROYED\nRespawning…').setVisible(true);
         if (this.pSprites[this.myIdx]) {
@@ -128,6 +163,7 @@ class FFAScene extends Phaser.Scene {
           this.pSprites[this.myIdx].turret.setVisible(false);
         }
         break;
+
       case 'ffa_respawned':
         this.respTxt.setVisible(false);
         if (this.pSprites[this.myIdx]) {
@@ -135,14 +171,43 @@ class FFAScene extends Phaser.Scene {
           this.pSprites[this.myIdx].turret.setVisible(true);
         }
         break;
+
       case 'ffa_over':
         this.isOver = true;
         clearInterval(this._inputTick);
         this.time.delayedCall(500, () => showFFAResult(m.leaderboard, false, m.code));
         break;
+
       case 'ffa_disbanded':
         showFFAResult(null, true);
         break;
+
+      // ── RTD ─────────────────────────────────────────────────────
+      case 'rtd_roll_earned':
+        if (!this.isRTD) break;
+        this._showToast(`🎲 ROLL READY!  (${m.kills} kills)`, '#ffff44', 3000);
+        break;
+
+      case 'rtd_no_points':
+        if (!this.isRTD) break;
+        this._showToast(`NOT ENOUGH POINTS  (${m.have}/${m.need})`, '#ff4060', 2000);
+        break;
+
+      case 'rtd_rolled': {
+        if (!this.isRTD) break;
+        const eff   = (typeof RTD_BY_ID !== 'undefined') ? RTD_BY_ID[m.effectId] : null;
+        const label = eff ? eff.label : m.effectId;
+        const color = eff ? eff.color : '#ffffff';
+        const isMe  = m.playerIdx === this.myIdx;
+
+        if (isMe) {
+          this._playDiceAnimation(label, color);
+        } else {
+          const pCol = '#' + (PLAYER_COLS[m.playerIdx] || 0xffffff).toString(16).padStart(6, '0');
+          this._showToast(`P${m.playerIdx + 1} rolled: ${label}`, pCol, 3500);
+        }
+        break;
+      }
     }
   }
 
@@ -150,15 +215,10 @@ class FFAScene extends Phaser.Scene {
   _sendInput() {
     if (!this.sock || this.sock.readyState !== WebSocket.OPEN) return;
 
-    // ── Turret angle ─────────────────────────────────────────────
-    // Camera is always centred on the tank, so the tank is always at
-    // exactly (canvasW/2, canvasH/2) in Phaser canvas pixels.
-    // Angle from canvas-centre to pointer = angle from tank to mouse.
-    // No coordinate conversion needed — works regardless of CSS scale or zoom.
-    const ptr  = this.input.activePointer;
-    const cx   = this.scale.width  / 2;
-    const cy   = this.scale.height / 2;
-    const ta   = Phaser.Math.RadToDeg(Math.atan2(ptr.y - cy, ptr.x - cx)) + 90;
+    const ptr = this.input.activePointer;
+    const cx  = this.scale.width  / 2;
+    const cy  = this.scale.height / 2;
+    const ta  = Phaser.Math.RadToDeg(Math.atan2(ptr.y - cy, ptr.x - cx)) + 90;
 
     this.sock.send(JSON.stringify({
       type: 'ffa_input',
@@ -171,6 +231,13 @@ class FFAScene extends Phaser.Scene {
         turretAngle: ta,
       },
     }));
+
+    // RTD: send roll request when flagged by update()
+    if (this.isRTD && this._rollPending) {
+      this._rollPending = false;
+      this.sock.send(JSON.stringify({ type: 'ffa_roll' }));
+      this.canRoll = false; // optimistic — confirmed by rtd_rolled from server
+    }
   }
 
   // ── Update ───────────────────────────────────────────────────────
@@ -178,11 +245,31 @@ class FFAScene extends Phaser.Scene {
     if (!this.state) return;
     const st = this.state;
 
+    // Re-check mode every frame in case ffaLobbyMode was set after scene created
+    this.isRTD = (typeof ffaLobbyMode !== 'undefined') && ffaLobbyMode === 'rtd';
+
+    // RTD: detect Q press here inside Phaser's update loop
+    // (JustDown only works reliably here, not inside setInterval)
+    // Re-read canRoll straight from latest state so it's always fresh
+    if (this.isRTD && st.players && st.players[this.myIdx]) {
+      this.canRoll = !!st.players[this.myIdx].canRoll;
+    }
+
+    if (this.isRTD && Phaser.Input.Keyboard.JustDown(this.keys.q)) {
+      if (this.canRoll && !this._diceAnimActive) {
+        this._rollPending = true;
+      } else {
+        // Tell server anyway so it sends back rtd_no_points if applicable
+        if (this.sock && this.sock.readyState === WebSocket.OPEN) {
+          this.sock.send(JSON.stringify({ type: 'ffa_roll' }));
+        }
+      }
+    }
+
     for (const [iStr, pd] of Object.entries(st.players)) {
       this._syncSprite(parseInt(iStr), pd);
     }
 
-    // ── Camera — hard-lock to sprite position every frame ────────
     const mySp = this.pSprites[this.myIdx];
     if (mySp?.body?.visible) {
       this.cameras.main.centerOn(mySp.body.x, mySp.body.y);
@@ -216,13 +303,28 @@ class FFAScene extends Phaser.Scene {
     sp.turret.setPosition(sp.body.x, sp.body.y);
     sp.turret.angle = pd.turretAngle;
 
+    // Tint tank to show active RTD effect
+    if (this.isRTD && pd.effect) {
+      const eff = (typeof RTD_BY_ID !== 'undefined') ? RTD_BY_ID[pd.effect] : null;
+      const tintHex = eff ? parseInt(eff.color.replace('#', ''), 16) : 0xffffff;
+      sp.body.setTint(tintHex);
+      sp.turret.setTint(tintHex);
+    } else if (!isMe) {
+      const col = PLAYER_COLS[idx] || 0xffffff;
+      sp.body.setTint(col);
+      sp.turret.setTint(col);
+    } else {
+      sp.body.clearTint();
+      sp.turret.clearTint();
+    }
+
     const BW  = 36;
     const pct = Math.max(0, pd.hp / 100);
     sp.hpBg.setPosition(sp.body.x, sp.body.y - 28);
     sp.hpBar.setPosition(sp.body.x - BW / 2, sp.body.y - 28);
     sp.hpBar.displayWidth = BW * pct;
     sp.tag.setPosition(sp.body.x, sp.body.y - 40);
-    sp.tag.setText(`P${idx + 1}  ${pd.kills ?? 0}K`);
+    sp.tag.setText(`P${idx + 1}  ${pd.kills ?? 0}K${this.isRTD && pd.effect ? ' ✦' : ''}`);
   }
 
   _makeSprite(idx) {
@@ -257,8 +359,19 @@ class FFAScene extends Phaser.Scene {
       if (!g) {
         const c = PLAYER_COLS[b.owner] || 0xffffff;
         g = this.add.graphics().setDepth(6);
-        g.fillStyle(c, 1); g.fillCircle(0, 0, 5);
-        g.fillStyle(0xffffff, 0.4); g.fillCircle(-2, -2, 2);
+        if (b.wallhack) {
+          // Ghost bullet — translucent with outer ring
+          g.fillStyle(c, 0.45); g.fillCircle(0, 0, 5);
+          g.lineStyle(1.5, c, 0.9); g.strokeCircle(0, 0, 8);
+        } else if (b.bouncy) {
+          // Bouncy bullet — solid with white ring
+          g.fillStyle(c, 1); g.fillCircle(0, 0, 5);
+          g.fillStyle(0xffffff, 0.6); g.fillCircle(-2, -2, 2);
+          g.lineStyle(1.5, 0xffffff, 0.6); g.strokeCircle(0, 0, 8);
+        } else {
+          g.fillStyle(c, 1); g.fillCircle(0, 0, 5);
+          g.fillStyle(0xffffff, 0.4); g.fillCircle(-2, -2, 2);
+        }
         g._own = b.owner;
         this.bSprites.set(b.id, g);
       }
@@ -275,6 +388,7 @@ class FFAScene extends Phaser.Scene {
       this.parts.push({ g, x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 1 });
     }
   }
+
   _tickParts(dt) {
     this.parts = this.parts.filter(p => {
       p.x += p.vx * dt; p.y += p.vy * dt;
@@ -303,7 +417,135 @@ class FFAScene extends Phaser.Scene {
     for (let i = sorted.length; i < 8; i++) this.lbTxt[i].setText('');
 
     const me = st.players[this.myIdx];
-    if (me) { hudHp = me.hp; hudScore = me.kills || 0; refreshHUD(); }
+    if (me) {
+      hudHp     = me.hp;
+      hudScore  = me.kills || 0;
+      hudPoints = me.points || 0;
+      refreshHUD();
+      // Show/hide the POINTS HUD block only in RTD mode
+      const ptBlock = document.getElementById('hud-points-block');
+      if (ptBlock) ptBlock.style.display = this.isRTD ? '' : 'none';
+    }
+
+    // ── RTD HUD ───────────────────────────────────────────────────
+    if (!this.isRTD) return;
+
+    // Roll prompt — visible and pulsing when a roll is available
+    if (this.rollPrompt) {
+      const show = this.canRoll && !this._diceAnimActive;
+      this.rollPrompt.setVisible(show);
+      if (show && !this.rollPulseTween) {
+        this.rollPulseTween = this.tweens.add({
+          targets: this.rollPrompt, alpha: { from: 1, to: 0.25 },
+          duration: 500, yoyo: true, repeat: -1,
+        });
+      } else if (!show && this.rollPulseTween) {
+        this.rollPulseTween.stop();
+        this.rollPulseTween = null;
+        this.rollPrompt.setAlpha(1);
+      }
+    }
+
+    // Active effect indicator under timer
+    if (this.effectIndicator && me) {
+      if (me.effect) {
+        const eff = (typeof RTD_BY_ID !== 'undefined') ? RTD_BY_ID[me.effect] : null;
+        this.effectIndicator.setText(`✦ ${eff ? eff.label : me.effect} ✦`);
+        this.effectIndicator.setColor(eff ? eff.color : '#ffff44');
+        this.effectIndicator.setVisible(true);
+      } else {
+        this.effectIndicator.setVisible(false);
+      }
+    }
+  }
+
+  // ── RTD: Dice roll animation ─────────────────────────────────────
+  _playDiceAnimation(effectLabel, effectColor) {
+    if (!this.diceTxt) return;
+    this._diceAnimActive = true;
+
+    const sw = this.scale.width, sh = this.scale.height;
+    const SYMS = ['⚀','⚁','⚂','⚃','⚄','⚅'];
+    const TOTAL = 20;
+    let tick = 0;
+
+    // Dim overlay
+    this.diceOverlay
+      .clear()
+      .fillStyle(0x000000, 0.6)
+      .fillRect(0, 0, sw, sh)
+      .setVisible(true);
+
+    this.diceTxt.setText(SYMS[0]).setColor('#ffffff').setScale(1).setAlpha(1).setVisible(true);
+
+    this.time.addEvent({
+      delay: 55,
+      repeat: TOTAL - 1,
+      callback: () => {
+        tick++;
+        const sym = SYMS[Math.floor(Math.random() * SYMS.length)];
+        // Slow down near the end
+        const wobble = 0.85 + Math.random() * 0.3;
+        this.diceTxt.setText(sym).setScale(wobble);
+
+        if (tick > TOTAL - 5) this.diceTxt.setColor(effectColor);
+
+        if (tick === TOTAL) {
+          // Lock on ⚅ and show result
+          this.diceTxt.setText('⚅').setColor(effectColor).setScale(1.5);
+
+          // Float-up effect label
+          if (this.effectBanner) {
+            this.effectBanner
+              .setText(effectLabel).setColor(effectColor)
+              .setY(sh / 2 - 80).setAlpha(1).setVisible(true);
+            this.tweens.add({
+              targets: this.effectBanner,
+              alpha: 0, y: sh / 2 - 140,
+              duration: 2200, ease: 'Cubic.Out',
+              onComplete: () => {
+                this.effectBanner.setVisible(false).setY(sh / 2 - 80);
+              },
+            });
+          }
+
+          // Shrink dice away after a beat
+          this.tweens.add({
+            targets: this.diceTxt,
+            scaleX: 0, scaleY: 0, alpha: 0,
+            delay: 900, duration: 350, ease: 'Back.In',
+            onComplete: () => {
+              this.diceTxt.setVisible(false).setScale(1).setAlpha(1);
+              this.diceOverlay.clear().setVisible(false);
+              this._diceAnimActive = false;
+            },
+          });
+        }
+      },
+    });
+  }
+
+  // ── RTD: Toast ───────────────────────────────────────────────────
+  _showToast(msg, color, duration) {
+    const sw = this.scale.width, sh = this.scale.height;
+    const t = this.add.text(sw / 2, sh - 55, msg, {
+      fontFamily: 'Share Tech Mono', fontSize: '11px',
+      color, stroke: '#000', strokeThickness: 3,
+    }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(94).setAlpha(0);
+
+    this.tweens.add({
+      targets: t, alpha: 1, y: sh - 65,
+      duration: 200, ease: 'Cubic.Out',
+      onComplete: () => {
+        this.time.delayedCall(duration - 450, () => {
+          this.tweens.add({
+            targets: t, alpha: 0,
+            duration: 400,
+            onComplete: () => t.destroy(),
+          });
+        });
+      },
+    });
   }
 
   // ── Minimap ───────────────────────────────────────────────────────
@@ -330,7 +572,6 @@ class FFAScene extends Phaser.Scene {
       g.fillCircle(mx + p.x * sx, my + p.y * sy, i === this.myIdx ? 3.5 : 2.5);
     }
 
-    // Camera viewport outline
     const cam = this.cameras.main;
     const vx  = mx + cam.scrollX * sx;
     const vy  = my + cam.scrollY * sy;
@@ -343,7 +584,9 @@ class FFAScene extends Phaser.Scene {
   _drawCrosshair() {
     const g = this.xhairGfx; g.clear();
     const x = this.ptrX, y = this.ptrY;
-    g.lineStyle(1.5, 0x00e5ff, 0.85);
+    // Gold crosshair when a roll is available
+    const col = (this.isRTD && this.canRoll) ? 0xffff44 : 0x00e5ff;
+    g.lineStyle(1.5, col, 0.85);
     [[x-14,y,x-4,y],[x+4,y,x+14,y],[x,y-14,x,y-4],[x,y+4,x,y+14]]
       .forEach(([x1,y1,x2,y2]) => { g.beginPath(); g.moveTo(x1,y1); g.lineTo(x2,y2); g.strokePath(); });
     g.strokeCircle(x, y, 4);
