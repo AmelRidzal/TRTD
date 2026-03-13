@@ -13,7 +13,7 @@ const { WebSocketServer, WebSocket } = require('ws'); // only dep
 
 // ── Paths ─────────────────────────────────────────────────────────
 const SERVER_DIR = fs.realpathSync(path.dirname(process.argv[1]));
-const GAME_DIR   = path.resolve(SERVER_DIR, '..');
+const GAME_DIR = SERVER_DIR;
 const PORT       = process.env.PORT || 3000;
 const TICK_MS    = 33; // ~30 Hz
 

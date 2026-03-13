@@ -2,8 +2,7 @@
   "name": "trtd",
   "version": "1.0.0",
   "scripts": {
-    "start": "node server/server.js",
-    "install": "cd server && npm install"
+    "start": "node server.js"
   },
   "dependencies": {
     "ws": "^8.16.0"
