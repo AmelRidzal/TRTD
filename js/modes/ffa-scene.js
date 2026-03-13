@@ -418,13 +418,16 @@ class FFAScene extends Phaser.Scene {
 
     const me = st.players[this.myIdx];
     if (me) {
-      hudHp     = me.hp;
-      hudScore  = me.kills || 0;
-      hudPoints = me.points || 0;
+      hudHp    = me.hp;
+      hudScore = me.kills || 0;
+      if (typeof hudPoints !== 'undefined') hudPoints = me.points || 0;
       refreshHUD();
-      // Show/hide the POINTS HUD block only in RTD mode
-      const ptBlock = document.getElementById('hud-points-block');
-      if (ptBlock) ptBlock.style.display = this.isRTD ? '' : 'none';
+      // Show/hide POINTS display only in RTD mode
+      const _show = this.isRTD ? '' : 'none';
+      const ptVal = document.getElementById('points-val');
+      const ptLbl = document.getElementById('points-label');
+      if (ptVal) ptVal.style.display = _show;
+      if (ptLbl) ptLbl.style.display = _show;
     }
 
     // ── RTD HUD ───────────────────────────────────────────────────

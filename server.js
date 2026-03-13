@@ -319,7 +319,7 @@ const RTD_EFFECTS = [
   { id:'half_fire',   duration:15000 },
   { id:'half_speed',  duration:15000 },
 ];
-const RTD_POINTS_PER_KILL = 10; // score per kill (use 3 in prod)
+const RTD_POINTS_PER_KILL = 3; // score per kill (use 3 in prod)
 const RTD_ROLL_COST      = 10; // points needed to roll
 
 
@@ -435,13 +435,26 @@ function ffaTick(lobby,dt,now){
       p.angle=Math.atan2(dy,dx)*180/Math.PI+90;
     }
     p.turretAngle=inp.turretAngle;
-    if(inp.fire&&now-p.lastFire>=FFA_FIRE_CD){
+
+    // ── RTD: expire effects ───────────────────────────────────────
+    if(p.effect && now >= p.effectEnd){
+      console.log(`[RTD-DEBUG] Effect expired for P${p.idx}: ${p.effect}`);
+      p.effect=null; p.effectEnd=0;
+      if(p.hp > 100) p.hp = 100; // clamp HP if double_hp wore off
+    }
+
+    // ── Fire (with RTD modifiers) ─────────────────────────────────
+    const fireCd = p.effect==='double_fire' ? FFA_FIRE_CD/2
+                 : p.effect==='half_fire'   ? FFA_FIRE_CD*2
+                 : FFA_FIRE_CD;
+    if(inp.fire&&now-p.lastFire>=fireCd){
       p.lastFire=now;
       const rad=(inp.turretAngle-90)*Math.PI/180;
-      // FIX 1: 32px offset (was 24) so bullet spawns clear the tank's wall collision radius
       bullets.push({id:lobby.nextBulletId++,owner:p.idx,
         x:p.x+Math.cos(rad)*12,y:p.y+Math.sin(rad)*12,
-        vx:Math.cos(rad)*FFA_BSPEED,vy:Math.sin(rad)*FFA_BSPEED,born:now});
+        vx:Math.cos(rad)*FFA_BSPEED,vy:Math.sin(rad)*FFA_BSPEED,born:now,
+        wallhack: p.effect==='wallhack',
+        bouncy:   p.effect==='bouncy'});
     }
   }
   const alive=[];
@@ -642,6 +655,8 @@ wss.on('connection', (socket, req) => {
       let msg; try{msg=JSON.parse(raw);}catch{return;}
       const lob = ffaLobbies.get(code); if(!lob)return;
       if(msg.type==='ffa_start_game' && myIdx===0 && lob.status==='waiting' && lob.nextIdx>=2){
+        if(msg.mode) lob.mode = msg.mode;
+        console.log(`[RTD-DEBUG] Starting game  lobby=${lob.code}  mode=${lob.mode}`);
         ffaStartGame(lob);
       }
       if(msg.type==='ffa_input' && lob.players[myIdx]){

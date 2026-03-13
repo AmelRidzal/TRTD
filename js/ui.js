@@ -328,7 +328,7 @@ function applyScale(overrideW, overrideH) {
   const scale = Math.min(
     window.innerWidth  / cW,
     window.innerHeight / (cH + HUD_H + HINT_H)
-  );
+  ) * 0.8;
 
   const scaledW = cW    * scale;
   const scaledH = cH    * scale;
@@ -420,13 +420,14 @@ function _connectFFASocket(code) {
 
     if (m.type === 'ffa_joined') {
       duelPlayerIndex = m.playerIndex;
-      if (m.mode) ffaLobbyMode = m.mode;
+      const isHost = m.playerIndex === 0;
       if (m.inProgress) {
+        if (m.mode) ffaLobbyMode = m.mode;
         document.getElementById('ffa-lobby-status').textContent = 'Joining game in progress...';
       } else {
-        const isHost = m.playerIndex === 0;
-        // Non-hosts can see mode but can't change it
-        _ffaUpdateModeDisplay(m.mode, isHost);
+        // Guests sync to server mode; host keeps their own selection
+        if (!isHost && m.mode) ffaLobbyMode = m.mode;
+        _ffaUpdateModeDisplay(ffaLobbyMode, isHost);
         document.getElementById('ffa-start-btn').style.display = isHost ? 'block' : 'none';
         _ffaUpdateSlots(m.playerIndex + 1);
       }
@@ -489,7 +490,7 @@ function _ffaUpdateSlots(count) {
 
 function startFFAGame() {
   if (!duelSocket || duelSocket.readyState !== WebSocket.OPEN) return;
-  duelSocket.send(JSON.stringify({type:'ffa_start_game'}));
+  duelSocket.send(JSON.stringify({type:'ffa_start_game', mode: ffaLobbyMode}));
 }
 
 function _launchFFAGame() {
