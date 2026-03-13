@@ -39,9 +39,11 @@ html, body {
    ================================================================ */
 #hud {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 8px 0 6px; height: 46px;
-  width: 100%;
+  padding: 8px 12px 6px; height: 46px;
   box-sizing: border-box;
+  /* Positioned by applyScale() to sit above the canvas */
+  position: absolute;
+  left: 0; right: 0;
 }
 .hud-block { display: flex; flex-direction: column; gap: 3px; flex: 1; }
 .hud-block.right { align-items: flex-end; }
@@ -72,8 +74,10 @@ html, body {
   padding: 6px 0 0;
   font-family: 'Share Tech Mono', monospace;
   font-size: 10px; color: #1e1e30; letter-spacing: 1px; text-align: center;
-  width: 100%;
   box-sizing: border-box;
+  /* Positioned by applyScale() to sit below the canvas */
+  position: absolute;
+  left: 0; right: 0;
 }
 
 /* ================================================================

@@ -227,7 +227,7 @@ class DuelScene extends Phaser.Scene {
 
     for (const [id, gfx] of this.bulletSprites) {
       if (!activeIds.has(id)) {
-        this._spawnParticles(gfx.x, gfx.y, id % 2 === 0 ? 0x00e5ff : 0xff3355, 4);
+        this._spawnParticles(gfx.x, gfx.y, gfx._col, 4);
         gfx.destroy();
         this.bulletSprites.delete(id);
       }
@@ -237,7 +237,9 @@ class DuelScene extends Phaser.Scene {
       let gfx = this.bulletSprites.get(b.id);
       if (!gfx) {
         gfx = this.add.graphics().setDepth(6);
-        const col = b.ownerIndex === this.myIndex ? 0x00e5ff : 0xff3355;
+        // Player 0 is always cyan, player 1 is always red — consistent across all screens
+        const col = b.ownerIndex === 0 ? 0x00e5ff : 0xff3355;
+        gfx._col = col;
         gfx.fillStyle(col); gfx.fillCircle(0, 0, 5);
         gfx.fillStyle(0xffffff, 0.7); gfx.fillCircle(-2, -2, 2);
         this.bulletSprites.set(b.id, gfx);

@@ -62,7 +62,7 @@ class FFAScene extends Phaser.Scene {
     }
 
     this._inputTick = setInterval(() => this._sendInput(), 33);
-    this.time.delayedCall(80, () => applyScale());
+    this.time.delayedCall(80, () => applyScale(MAP_FFA.width, MAP_FFA.height));
   }
 
   // ── HUD ─────────────────────────────────────────────────────────

@@ -24,6 +24,12 @@ function showScreen(id) {
     document.getElementById(s).classList.toggle('active', s === id);
   });
   document.getElementById('overlay').classList.remove('hidden');
+
+  // Restore wave HUD elements when leaving FFA (hidden during FFA game)
+  if (id !== 'screen-ffa-result') {
+    document.getElementById('wave-title').style.visibility = '';
+    document.getElementById('wave-num').style.visibility   = '';
+  }
 }
 
 // ── Wave Clear ────────────────────────────────────────────────────
@@ -297,33 +303,47 @@ const HINT_H = 28;   // px — fixed hint strip height
 const MENU_CANVAS_W = 900;
 const MENU_CANVAS_H = 600;
 
-function applyScale() {
+function applyScale(overrideW, overrideH) {
   const wrapper = document.getElementById('game-wrapper');
+  const hud     = document.getElementById('hud');
+  const hint    = document.getElementById('controls-hint');
 
-  // Use Phaser canvas dimensions when in-game, menu defaults otherwise
+  // Use override dims, then live canvas dims, then menu defaults
   const canvas = wrapper.querySelector('canvas');
-  const cW = (canvas && canvas.width  > 0) ? canvas.width  : MENU_CANVAS_W;
-  const cH = (canvas && canvas.height > 0) ? canvas.height : MENU_CANVAS_H;
+  const cW = overrideW || (canvas && canvas.width  > 0 ? canvas.width  : MENU_CANVAS_W);
+  const cH = overrideH || (canvas && canvas.height > 0 ? canvas.height : MENU_CANVAS_H);
 
-  const totalW = cW;
-  const totalH = cH + HUD_H + HINT_H;
-
+  // Scale the canvas to fit the viewport, reserving space for HUD + hint
   const scale = Math.min(
-    window.innerWidth  / totalW,
-    window.innerHeight / totalH
+    window.innerWidth  / cW,
+    window.innerHeight / (cH + HUD_H + HINT_H)
   );
 
-  const scaledW = totalW * scale;
-  const scaledH = totalH * scale;
+  const scaledW = cW    * scale;
+  const scaledH = cH    * scale;
+  const totalH  = scaledH + HUD_H + HINT_H;
   const left    = (window.innerWidth  - scaledW) / 2;
-  const top     = (window.innerHeight - scaledH) / 2;
+  const top     = (window.innerHeight - totalH)  / 2;
 
   window._cssScale = scale;
-  wrapper.style.width     = totalW + 'px';
-  wrapper.style.height    = totalH + 'px';
+
+  // Canvas wrapper — only the game canvas is scaled
+  wrapper.style.width     = cW + 'px';
+  wrapper.style.height    = cH + 'px';
   wrapper.style.transform = `scale(${scale})`;
+  wrapper.style.transformOrigin = 'top left';
   wrapper.style.left      = left + 'px';
-  wrapper.style.top       = top  + 'px';
+  wrapper.style.top       = (top + HUD_H) + 'px';
+
+  // HUD sits above canvas at its natural size — never scaled
+  hud.style.width  = scaledW + 'px';
+  hud.style.left   = left + 'px';
+  hud.style.top    = top + 'px';
+
+  // Controls hint sits below canvas at natural size — never scaled
+  hint.style.width = scaledW + 'px';
+  hint.style.left  = left + 'px';
+  hint.style.top   = (top + HUD_H + scaledH) + 'px';
 }
 
 (function initScaling() {
@@ -430,13 +450,16 @@ function startFFAGame() {
 
 function _launchFFAGame() {
   document.getElementById('overlay').classList.add('hidden');
+
+  // Fix 5: hide wave-mode HUD elements — irrelevant in FFA
+  document.getElementById('wave-title').style.visibility = 'hidden';
+  document.getElementById('wave-num').style.visibility   = 'hidden';
+
   if (phaserGame) { try { phaserGame.destroy(true); } catch {} phaserGame = null; }
   activeMap = MAP_FFA;
 
   // Buffer any state messages that arrive before the scene's create() runs.
-  // The scene will drain this queue in its first update() cycle.
   window._ffaMsgQueue = [];
-  const origOnMsg = duelSocket.onmessage;
   duelSocket.onmessage = evt => {
     let m; try { m = JSON.parse(evt.data); } catch { return; }
     window._ffaMsgQueue.push(m);
@@ -452,7 +475,17 @@ function _launchFFAGame() {
     scene: [FFAScene],
     audio: { noAudio: true },
   });
-  setTimeout(() => applyScale(), 100);
+
+  // Fix 4: force applyScale with the known FFA canvas size immediately,
+  // then again once Phaser has actually inserted the canvas element.
+  applyScale(MAP_FFA.width, MAP_FFA.height);
+  const _waitForCanvas = setInterval(() => {
+    const c = document.querySelector('#phaser-container canvas');
+    if (c && c.width > 0) {
+      clearInterval(_waitForCanvas);
+      applyScale();
+    }
+  }, 30);
 }
 
 function copyFFACode() {

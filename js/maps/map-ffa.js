@@ -1,20 +1,14 @@
 // ================================================================
 //  map-ffa.js  —  "WARZONE"  2400×1600
-//  Large FFA arena. Thin walls = {x,y,w,h} rects, not tile pts.
-//  Camera follows player at 1.5x zoom showing ~800x533 of world.
+//  Spawns are loaded from maps-config.json — edit that file to move them.
 // ================================================================
 
 const MAP_FFA = {
   id: 'ffa', label: 'WARZONE', width: 2400, height: 1600,
   isFFA: true,
 
-  // 12 spread-out spawn points (must match server.js FFA_SPAWNS)
-  spawns: [
-    {x:200,  y:200},  {x:1200, y:180},  {x:2200, y:200},
-    {x:180,  y:800},  {x:600,  y:500},  {x:1200, y:800},
-    {x:1800, y:500},  {x:2220, y:800},  {x:200,  y:1400},
-    {x:800,  y:1300}, {x:1600, y:1300}, {x:2200, y:1400},
-  ],
+  // Populated at runtime from maps-config.json (loaded in index.html before this script)
+  get spawns() { return window._mapsConfig?.ffa?.spawns || []; },
 
   get walls() {
     const r = [], T = 10, W = 2400, H = 1600;

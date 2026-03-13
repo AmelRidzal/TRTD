@@ -11,24 +11,24 @@
 <body>
 
 <div id="scale-root">
-  <div id="game-wrapper">
-
-    <!-- ── HUD ── -->
-    <div id="hud">
-      <div class="hud-block">
-        <span class="hud-label">HEALTH</span>
-        <div class="bar-wrap"><div id="hp-bar"></div></div>
-        <span class="hud-value" id="hp-val">100</span>
-      </div>
-      <div class="hud-center">
-        <div id="wave-title">WAVE</div>
-        <div id="wave-num">—</div>
-      </div>
-      <div class="hud-block right">
-        <span class="hud-label">SCORE · KILLS</span>
-        <span class="hud-value" id="score-val">0</span>
-      </div>
+  <!-- ── HUD — outside game-wrapper so CSS scale never shrinks it ── -->
+  <div id="hud">
+    <div class="hud-block">
+      <span class="hud-label">HEALTH</span>
+      <div class="bar-wrap"><div id="hp-bar"></div></div>
+      <span class="hud-value" id="hp-val">100</span>
     </div>
+    <div class="hud-center">
+      <div id="wave-title">WAVE</div>
+      <div id="wave-num">—</div>
+    </div>
+    <div class="hud-block right">
+      <span class="hud-label">SCORE · KILLS</span>
+      <span class="hud-value" id="score-val">0</span>
+    </div>
+  </div>
+
+  <div id="game-wrapper">
 
     <!-- ── Canvas + Overlay ── -->
     <div id="phaser-container"></div>
@@ -283,13 +283,19 @@
 
     </div><!-- /#overlay -->
 
-    <div id="controls-hint">
-      WASD — MOVE &nbsp;·&nbsp; MOUSE — AIM &nbsp;·&nbsp; LEFT CLICK / HOLD — SHOOT
-    </div>
-
   </div><!-- /#game-wrapper -->
-</div><!-- /#scale-root -->
 
+  <!-- ── Controls hint — outside game-wrapper so it stays full size ── -->
+  <div id="controls-hint">
+    WASD — MOVE &nbsp;·&nbsp; MOUSE — AIM &nbsp;·&nbsp; LEFT CLICK / HOLD — SHOOT
+  </div>
+
+</div><!-- /#scale-root -->
+<script>
+  fetch('/maps-config.json')
+    .then(r => r.json())
+    .then(d => window._mapsConfig = d);
+</script>
 <script src="js/constants.js"></script>
 <script src="js/state.js"></script>
 <script src="js/hud.js"></script>

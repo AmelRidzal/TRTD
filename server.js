@@ -2,7 +2,7 @@
 //  server.js  —  Tank Commander game server
 //  Zero external dependencies — uses only Node.js built-ins.
 //
-//  Run:  node server/server.js
+//  Run:  node server.js
 //  Then open:  http://localhost:3000
 // ================================================================
 
@@ -13,7 +13,7 @@ const { WebSocketServer, WebSocket } = require('ws'); // only dep
 
 // ── Paths ─────────────────────────────────────────────────────────
 const SERVER_DIR = fs.realpathSync(path.dirname(process.argv[1]));
-const GAME_DIR = SERVER_DIR;
+const GAME_DIR = SERVER_DIR;  // server.js is now in root alongside index.html
 const PORT       = process.env.PORT || 3000;
 const TICK_MS    = 33; // ~30 Hz
 
@@ -30,20 +30,18 @@ const MIME = {
 
 // ── Static file handler (replaces express.static) ─────────────────
 function serveStatic(req, res) {
-  // Only serve GET requests
   if (req.method !== 'GET') return false;
 
-  let urlPath = req.url.split('?')[0]; // strip query string
+  let urlPath = req.url.split('?')[0];
   if (urlPath === '/' || urlPath === '') urlPath = '/index.html';
 
-  // Prevent directory traversal
   const filePath = path.resolve(GAME_DIR, '.' + urlPath);
   if (!filePath.startsWith(GAME_DIR)) {
     res.writeHead(403); res.end('Forbidden'); return true;
   }
 
   if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
-    return false; // let caller handle 404
+    return false;
   }
 
   const ext  = path.extname(filePath).toLowerCase();
@@ -54,7 +52,7 @@ function serveStatic(req, res) {
   return true;
 }
 
-// ── Lobby manager (inline, no separate file needed for HTTP) ──────
+// ── Lobby manager ──────────────────────────────────────────────────
 const lobbies = new Map();
 const CHARS   = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -87,7 +85,7 @@ const PLAYER_SPEED=170, BULLET_SPEED=530;
 const FIRE_CD=270, BULLET_DMG=34, BULLET_R=5, TANK_R=16;
 const TILE=40;
 
-// ── Map definitions (must match js/maps/*.js) ──────────────────────
+// ── Map definitions ────────────────────────────────────────────────
 function borderPts(w,h) {
   const p=[];
   for(let x=0;x<w;x+=TILE){p.push([x+20,20]);p.push([x+20,h-20]);}
@@ -95,7 +93,6 @@ function borderPts(w,h) {
   return p;
 }
 function ptsToWalls(pts,w,h) {
-  // pts are [cx,cy] tile centres; convert to AABB {x,y,w,h} top-left
   return pts.map(([cx,cy])=>({x:cx-TILE/2,y:cy-TILE/2,w:TILE,h:TILE}));
 }
 
@@ -229,8 +226,9 @@ function tickGame(state, dt, now) {
     if (inp.fire && now-p.lastFire>=FIRE_CD) {
       p.lastFire=now;
       const rad=(inp.turretAngle-90)*Math.PI/180;
+      // FIX 1: 32px offset (was 24) so bullet spawns clear the tank's wall collision radius
       state.bullets.push({id:state.nextBulletId++,owner:i,
-        x:p.x+Math.cos(rad)*24, y:p.y+Math.sin(rad)*24,
+        x:p.x+Math.cos(rad)*12, y:p.y+Math.sin(rad)*12,
         vx:Math.cos(rad)*BULLET_SPEED, vy:Math.sin(rad)*BULLET_SPEED, born:now});
     }
   }
@@ -266,7 +264,7 @@ function tickGame(state, dt, now) {
 
 
 // ================================================================
-//  FFA — Free-For-All (inlined, no external require)
+//  FFA — Free-For-All
 // ================================================================
 const ffaLobbies = new Map();
 
@@ -274,15 +272,12 @@ const FFA_SPEED   = 180, FFA_BSPEED = 560, FFA_FIRE_CD = 260;
 const FFA_DMG     = 34,  FFA_TANK_R = 16,  FFA_BULL_R  = 5;
 const FFA_DURATION= 300; // seconds
 const FFA_RESPAWN = 3000; // ms
-const FFA_SAFE_D  = 350;  // min distance to call a spawn "safe"
 const FFA_W = 2400, FFA_H = 1600, FFA_T = 10;
 
-const FFA_SPAWNS = [
-  {x:200,y:200},{x:1200,y:180},{x:2200,y:200},
-  {x:180,y:800},{x:600,y:500},{x:1200,y:800},
-  {x:1800,y:500},{x:2220,y:800},{x:200,y:1400},
-  {x:800,y:1300},{x:1600,y:1300},{x:2200,y:1400},
-];
+// Load spawn points (and future map config) from maps-config.json.
+// To change spawns or add new FFA maps, edit that file only — no server changes needed.
+const MAPS_CONFIG = JSON.parse(fs.readFileSync(path.join(GAME_DIR, 'maps-config.json'), 'utf8'));
+const FFA_SPAWNS  = MAPS_CONFIG.ffa.spawns;
 
 function buildFFAWalls() {
   const r = [];
@@ -321,16 +316,20 @@ function ffaCircleWall(cx,cy,cr){
   return false;
 }
 
+// FIX 2: pick randomly from all spawns except the closest one to any living player
+// (old behaviour always picked the single furthest — safe but totally predictable)
 function ffaPickSpawn(players){
   const living=Object.values(players).filter(p=>p&&p.alive);
+  if(!living.length)return FFA_SPAWNS[Math.floor(Math.random()*FFA_SPAWNS.length)];
   const scored=FFA_SPAWNS.map(sp=>{
-    if(!living.length)return{sp,dist:Infinity};
     const minD=Math.min(...living.map(p=>Math.hypot(p.x-sp.x,p.y-sp.y)));
     return{sp,dist:minD};
   });
-  scored.sort((a,b)=>b.dist-a.dist);
-  return scored[0].dist>=FFA_SAFE_D ? scored[0].sp
-       : FFA_SPAWNS[Math.floor(Math.random()*FFA_SPAWNS.length)];
+  // Sort ascending so [0] is the closest (most dangerous) spawn
+  scored.sort((a,b)=>a.dist-b.dist);
+  // Drop the closest, pick randomly from everything else
+  const pool=scored.length>1 ? scored.slice(1) : scored;
+  return pool[Math.floor(Math.random()*pool.length)].sp;
 }
 
 function ffaMakeCode(){
@@ -372,7 +371,6 @@ function ffaStartGame(lobby){
 
 function ffaTick(lobby,dt,now){
   const{players,bullets}=lobby;
-  // Respawns
   for(const p of Object.values(players)){
     if(!p||p.alive)continue;
     if(p.respawnAt&&now>=p.respawnAt){
@@ -382,7 +380,6 @@ function ffaTick(lobby,dt,now){
       if(s&&s.readyState===WebSocket.OPEN)s.send(JSON.stringify({type:'ffa_respawned',x:sp.x,y:sp.y}));
     }
   }
-  // Move
   for(const p of Object.values(players)){
     if(!p||!p.alive)continue;
     const{input:inp}=p;
@@ -402,12 +399,12 @@ function ffaTick(lobby,dt,now){
     if(inp.fire&&now-p.lastFire>=FFA_FIRE_CD){
       p.lastFire=now;
       const rad=(inp.turretAngle-90)*Math.PI/180;
+      // FIX 1: 32px offset (was 24) so bullet spawns clear the tank's wall collision radius
       bullets.push({id:lobby.nextBulletId++,owner:p.idx,
-        x:p.x+Math.cos(rad)*24,y:p.y+Math.sin(rad)*24,
+        x:p.x+Math.cos(rad)*12,y:p.y+Math.sin(rad)*12,
         vx:Math.cos(rad)*FFA_BSPEED,vy:Math.sin(rad)*FFA_BSPEED,born:now});
     }
   }
-  // Bullets
   const alive=[];
   for(const b of bullets){
     if(now-b.born>2200)continue;
@@ -458,7 +455,6 @@ function ffaEnd(lobby){
   console.log('[ffa] Game over',lobby.code);
 }
 
-// Stale FFA cleanup
 setInterval(()=>{
   const cut=Date.now()-15*60*1000;
   for(const[code,l]of ffaLobbies)
@@ -470,10 +466,8 @@ setInterval(()=>{
 
 // ── HTTP server ───────────────────────────────────────────────────
 const server = http.createServer((req, res) => {
-  // CORS for local dev
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  // API routes
   if (req.method === 'POST' && req.url === '/api/lobby/create') {
     const code = makeCode();
     lobbies.set(code, {code, status:'waiting', sockets:[null,null], gameState:null, tickInterval:null, createdAt:Date.now(), rematchVotes:[false,false]});
@@ -507,7 +501,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // ── FFA API ────────────────────────────────────────────────────
   if (req.method === 'POST' && req.url === '/api/ffa/create') {
     const code = ffaMakeCode();
     ffaLobbies.set(code,{code,status:'waiting',sockets:{},players:{},
@@ -540,7 +533,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Static files
   if (!serveStatic(req, res)) {
     res.writeHead(404); res.end('Not found: ' + req.url);
   }
@@ -554,7 +546,6 @@ wss.on('connection', (socket, req) => {
   const code   = (p.get('code')||'').toUpperCase();
   const mode   = p.get('mode') || 'duel';
 
-  // ── FFA connection ────────────────────────────────────────────
   if (mode === 'ffa') {
     const ffaLobby = ffaLobbies.get(code);
     if (!ffaLobby || ffaLobby.nextIdx >= 8) { socket.close(4000,'FFA lobby not found or full'); return; }
@@ -589,7 +580,6 @@ wss.on('connection', (socket, req) => {
     return;
   }
 
-  // ── Duel connection ───────────────────────────────────────────
   const idx   = parseInt(p.get('player')||'0',10);
   const lobby = getLobby(code);
 
@@ -625,24 +615,18 @@ wss.on('connection', (socket, req) => {
     }
     if (msg.type==='rematch_request') {
       lobby.rematchVotes[idx] = true;
-      // Tell the OTHER player that this player wants a rematch
       const otherIdx = idx === 0 ? 1 : 0;
       wsend(lobby.sockets[otherIdx], {type:'rematch_request'});
-      // If both have voted, restart
       if (lobby.rematchVotes[0] && lobby.rematchVotes[1]) {
         lobby.rematchVotes = [false, false];
-        // Stop old game loop
         if (lobby.tickInterval) { clearInterval(lobby.tickInterval); lobby.tickInterval = null; }
-        // Fresh game state, keep same lobby/sockets
         lobby.status    = 'playing';
-        // Pick a new random map for the rematch
         const mapIds = Object.keys(MAP_DEFS);
         const others = mapIds.filter(id => id !== lobby.mapId);
         lobby.mapId  = others[Math.floor(Math.random() * others.length)] || 'arena';
         lobby.gameState = makeState(lobby.mapId);
         bcast(lobby, {type:'map_selected', mapId: lobby.mapId});
         bcast(lobby, {type:'rematch_start'});
-        // Start a new game loop
         let last = Date.now();
         lobby.tickInterval = setInterval(() => {
           const now = Date.now(), dt = (now - last) / 1000; last = now;
@@ -669,7 +653,6 @@ wss.on('connection', (socket, req) => {
   });
 });
 
-// Stale lobby cleanup
 setInterval(()=>{
   const cutoff=Date.now()-10*60*1000;
   for (const [code,l] of lobbies)
