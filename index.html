@@ -30,10 +30,12 @@
 
   <div id="game-wrapper">
 
-    <!-- ── Canvas + Overlay ── -->
+    <!-- ── Canvas ── -->
     <div id="phaser-container"></div>
 
-    <div id="overlay">
+  </div><!-- /#game-wrapper (closed early so overlay is outside the scaled wrapper) -->
+
+  <div id="overlay">
         <div class="scan-line"></div>
 
         <!-- ════════════════════════════════════════
@@ -276,14 +278,12 @@
           <div class="result-sub"  id="ffa-result-sub">FINAL STANDINGS</div>
           <div class="ffa-leaderboard" id="ffa-leaderboard"></div>
           <div class="btn-row" style="margin-top:24px">
-            <button class="big-btn" onclick="showScreen('screen-ffa-menu')">↺ PLAY AGAIN</button>
+            <button class="big-btn" id="ffa-play-again-btn" onclick="playAgainFFA()">↺ PLAY AGAIN</button>
             <button class="big-btn muted" onclick="showScreen('screen-main')">⌂ MENU</button>
           </div>
         </div>
 
     </div><!-- /#overlay -->
-
-  </div><!-- /#game-wrapper -->
 
   <!-- ── Controls hint — outside game-wrapper so it stays full size ── -->
   <div id="controls-hint">
@@ -291,11 +291,7 @@
   </div>
 
 </div><!-- /#scale-root -->
-<script>
-  fetch('/maps-config.json')
-    .then(r => r.json())
-    .then(d => window._mapsConfig = d);
-</script>
+
 <script src="js/constants.js"></script>
 <script src="js/state.js"></script>
 <script src="js/hud.js"></script>

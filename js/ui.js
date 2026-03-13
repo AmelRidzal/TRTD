@@ -25,10 +25,21 @@ function showScreen(id) {
   });
   document.getElementById('overlay').classList.remove('hidden');
 
-  // Restore wave HUD elements when leaving FFA (hidden during FFA game)
+  // Restore wave HUD elements when leaving FFA game
   if (id !== 'screen-ffa-result') {
     document.getElementById('wave-title').style.visibility = '';
     document.getElementById('wave-num').style.visibility   = '';
+  }
+
+  // When returning to any menu screen, destroy the game and reset scale to menu size
+  // so the overlay/buttons render at full size instead of FFA's shrunken scale
+  const isMenuScreen = !['screen-ffa-result', 'screen-duel-result', 'screen-result'].includes(id);
+  if (isMenuScreen && phaserGame) {
+    try { phaserGame.destroy(true); } catch {}
+    phaserGame = null;
+  }
+  if (isMenuScreen) {
+    applyScale(MENU_CANVAS_W, MENU_CANVAS_H);
   }
 }
 
@@ -364,6 +375,8 @@ async function createFFALobby() {
     if (!d.ok) throw new Error(d.error);
     ffaLobbyCode = d.code;
     document.getElementById('ffa-lobby-code-big').textContent = d.code;
+    document.getElementById('ffa-lobby-status').textContent =
+      d.inProgress ? 'Joining game in progress...' : 'Connecting...';
     showScreen('screen-ffa-lobby');
     _connectFFASocket(d.code);
   } catch(e) {
@@ -383,6 +396,8 @@ async function joinFFALobbyUI() {
     if (!d.ok) throw new Error(d.error);
     ffaLobbyCode = d.code;
     document.getElementById('ffa-lobby-code-big').textContent = d.code;
+    document.getElementById('ffa-lobby-status').textContent =
+      d.inProgress ? 'Joining game in progress...' : 'Connecting...';
     showScreen('screen-ffa-lobby');
     _connectFFASocket(d.code);
   } catch(e) {
@@ -400,9 +415,15 @@ function _connectFFASocket(code) {
 
     if (m.type === 'ffa_joined') {
       duelPlayerIndex = m.playerIndex;
-      const isHost = m.playerIndex === 0;
-      document.getElementById('ffa-start-btn').style.display = isHost ? 'block' : 'none';
-      _ffaUpdateSlots(m.playerIndex + 1);
+      if (m.inProgress) {
+        // Game already running — skip lobby, launch straight into the game
+        // ffa_start will follow immediately from server to kick off the scene
+        document.getElementById('ffa-lobby-status').textContent = 'Joining game in progress...';
+      } else {
+        const isHost = m.playerIndex === 0;
+        document.getElementById('ffa-start-btn').style.display = isHost ? 'block' : 'none';
+        _ffaUpdateSlots(m.playerIndex + 1);
+      }
     }
     if (m.type === 'ffa_lobby_update') {
       _ffaUpdateSlots(m.count);
@@ -499,8 +520,16 @@ function copyFFACode() {
   });
 }
 
-function showFFAResult(leaderboard, disbanded) {
+function showFFAResult(leaderboard, disbanded, code) {
+  // Store the code so playAgainFFA() can reconnect to the same lobby
+  if (code) ffaLobbyCode = code;
+
   document.getElementById('overlay').classList.remove('hidden');
+
+  // Show/hide play again button — only available if lobby is still alive (not disbanded)
+  const playAgainBtn = document.getElementById('ffa-play-again-btn');
+  if (playAgainBtn) playAgainBtn.style.display = disbanded ? 'none' : '';
+
   if (disbanded) {
     document.getElementById('ffa-result-title').textContent = 'DISCONNECTED';
     document.getElementById('ffa-result-sub').textContent   = 'A player disconnected';
@@ -518,4 +547,18 @@ function showFFAResult(leaderboard, disbanded) {
       </div>`).join('');
   }
   showScreen('screen-ffa-result');
+}
+
+// Reconnect to the same lobby and go back to the waiting room
+async function playAgainFFA() {
+  if (!ffaLobbyCode) { showScreen('screen-ffa-menu'); return; }
+  const code = ffaLobbyCode;
+
+  // Reconnect socket to the existing (now reset) lobby
+  _connectFFASocket(code);
+
+  // Show lobby screen so players can see who's back and host can restart
+  document.getElementById('ffa-lobby-code-big').textContent = code;
+  document.getElementById('ffa-lobby-status').textContent   = 'Reconnecting...';
+  showScreen('screen-ffa-lobby');
 }

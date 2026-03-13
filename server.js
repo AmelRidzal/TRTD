@@ -446,13 +446,19 @@ function ffaSendState(lobby,now){
 function ffaEnd(lobby){
   if(lobby.status==='over')return;
   lobby.status='over';
-  if(lobby.tickInterval)clearInterval(lobby.tickInterval);
+  if(lobby.tickInterval){clearInterval(lobby.tickInterval);lobby.tickInterval=null;}
   const lb=Object.values(lobby.players).filter(Boolean)
     .sort((a,b)=>b.kills-a.kills)
     .map(p=>({idx:p.idx,kills:p.kills,deaths:p.deaths}));
-  ffaBcast(lobby,{type:'ffa_over',leaderboard:lb});
-  ffaLobbies.delete(lobby.code);
-  console.log('[ffa] Game over',lobby.code);
+  // Send result with the lobby code so clients can reconnect for play-again
+  ffaBcast(lobby,{type:'ffa_over',leaderboard:lb,code:lobby.code});
+  // Reset lobby to waiting so the same players can start a new game
+  lobby.players={};
+  lobby.bullets=[];
+  lobby.nextBulletId=0;
+  lobby.startTime=null;
+  lobby.status='waiting';
+  console.log('[ffa] Game over, lobby reset to waiting:',lobby.code);
 }
 
 setInterval(()=>{
@@ -518,13 +524,18 @@ const server = http.createServer((req, res) => {
       try {
         const { code } = JSON.parse(body);
         const lobby = ffaLobbies.get((code||'').toUpperCase().trim());
-        if (!lobby || lobby.status !== 'waiting') {
+        if (!lobby || lobby.status === 'over') {
           res.writeHead(404,{'Content-Type':'application/json'});
-          res.end(JSON.stringify({ok:false,error:'FFA lobby not found or already started'}));
+          res.end(JSON.stringify({ok:false,error:'Lobby not found or already finished'}));
+          return;
+        }
+        if (lobby.nextIdx >= 8) {
+          res.writeHead(404,{'Content-Type':'application/json'});
+          res.end(JSON.stringify({ok:false,error:'Lobby is full (8/8)'}));
           return;
         }
         res.writeHead(200,{'Content-Type':'application/json'});
-        res.end(JSON.stringify({ok:true,code:lobby.code,count:lobby.nextIdx}));
+        res.end(JSON.stringify({ok:true,code:lobby.code,count:lobby.nextIdx,inProgress:lobby.status==='playing'}));
       } catch(e) {
         res.writeHead(400,{'Content-Type':'application/json'});
         res.end(JSON.stringify({ok:false,error:'Bad request'}));
@@ -548,12 +559,22 @@ wss.on('connection', (socket, req) => {
 
   if (mode === 'ffa') {
     const ffaLobby = ffaLobbies.get(code);
-    if (!ffaLobby || ffaLobby.nextIdx >= 8) { socket.close(4000,'FFA lobby not found or full'); return; }
+    if (!ffaLobby || ffaLobby.nextIdx >= 8 || ffaLobby.status === 'over') {
+      socket.close(4000,'FFA lobby not found, full, or finished'); return;
+    }
     const myIdx = ffaLobby.nextIdx++;
     ffaLobby.sockets[myIdx] = socket;
-    wsend(socket,{type:'ffa_joined',playerIndex:myIdx,code});
+    const inProgress = ffaLobby.status === 'playing';
+    wsend(socket,{type:'ffa_joined',playerIndex:myIdx,code,inProgress});
     ffaBcast(ffaLobby,{type:'ffa_lobby_update',count:ffaLobby.nextIdx});
-    console.log(`[ffa-ws] Player ${myIdx} joined lobby ${code} (${ffaLobby.nextIdx}/8)`);
+    console.log(`[ffa-ws] Player ${myIdx} joined lobby ${code} (${ffaLobby.nextIdx}/8)${inProgress?' [mid-game]':''}`);
+
+    // If game already running, spawn this player immediately
+    if (inProgress) {
+      const sp = ffaPickSpawn(ffaLobby.players);
+      ffaLobby.players[myIdx] = ffaMakePlayer(myIdx, sp.x, sp.y);
+      wsend(socket, {type:'ffa_start'});
+    }
 
     socket.on('message', raw => {
       let msg; try{msg=JSON.parse(raw);}catch{return;}

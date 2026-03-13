@@ -138,7 +138,7 @@ class FFAScene extends Phaser.Scene {
       case 'ffa_over':
         this.isOver = true;
         clearInterval(this._inputTick);
-        this.time.delayedCall(500, () => showFFAResult(m.leaderboard, false));
+        this.time.delayedCall(500, () => showFFAResult(m.leaderboard, false, m.code));
         break;
       case 'ffa_disbanded':
         showFFAResult(null, true);
@@ -303,7 +303,7 @@ class FFAScene extends Phaser.Scene {
     for (let i = sorted.length; i < 8; i++) this.lbTxt[i].setText('');
 
     const me = st.players[this.myIdx];
-    if (me) { hudHp = me.hp; refreshHUD(); }
+    if (me) { hudHp = me.hp; hudScore = me.kills || 0; refreshHUD(); }
   }
 
   // ── Minimap ───────────────────────────────────────────────────────
