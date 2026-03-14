@@ -65,6 +65,12 @@ class FFAScene extends Phaser.Scene {
 
     this._inputTick = setInterval(() => this._sendInput(), 33);
     this.time.delayedCall(80, () => applyScale(MAP_FFA.width, MAP_FFA.height));
+
+    // Pre-clear wave HUD elements so stale text from other modes doesn't show
+    const _wt = document.getElementById('wave-title');
+    const _wn = document.getElementById('wave-num');
+    if (_wt) _wt.textContent = '';
+    if (_wn) _wn.textContent = '';
   }
 
   // ── HUD ─────────────────────────────────────────────────────────
@@ -422,12 +428,9 @@ class FFAScene extends Phaser.Scene {
       hudScore = me.kills || 0;
       if (typeof hudPoints !== 'undefined') hudPoints = me.points || 0;
       refreshHUD();
-      // Show/hide POINTS display only in RTD mode
-      const _show = this.isRTD ? '' : 'none';
-      const ptVal = document.getElementById('points-val');
-      const ptLbl = document.getElementById('points-label');
-      if (ptVal) ptVal.style.display = _show;
-      if (ptLbl) ptLbl.style.display = _show;
+      // Show/hide POINTS block only in RTD mode
+      const _ptBlock = document.getElementById('hud-points-block');
+      if (_ptBlock) _ptBlock.style.display = this.isRTD ? '' : 'none';
     }
 
     // ── RTD HUD ───────────────────────────────────────────────────
@@ -449,7 +452,7 @@ class FFAScene extends Phaser.Scene {
       }
     }
 
-    // Active effect indicator under timer
+    // Active effect indicator under Phaser timer
     if (this.effectIndicator && me) {
       if (me.effect) {
         const eff = (typeof RTD_BY_ID !== 'undefined') ? RTD_BY_ID[me.effect] : null;
@@ -458,6 +461,34 @@ class FFAScene extends Phaser.Scene {
         this.effectIndicator.setVisible(true);
       } else {
         this.effectIndicator.setVisible(false);
+      }
+    }
+
+    // Drive center DOM HUD every frame from server state (avoids stale message-based updates)
+    const wtEl = document.getElementById('wave-title');
+    const wnEl = document.getElementById('wave-num');
+    if (wtEl && wnEl) {
+      if (this.isRTD) {
+        if (me && me.effect) {
+          const eff = (typeof RTD_BY_ID !== 'undefined') ? RTD_BY_ID[me.effect] : null;
+          wtEl.textContent = '🎲 ACTIVE';
+          wtEl.style.color = '#ffffff';
+          wtEl.style.fontSize = '9px';
+          wnEl.textContent = eff ? eff.label : me.effect;
+          wnEl.style.color = eff ? eff.color : '#ffff44';
+          wnEl.style.fontSize = '10px';
+          wnEl.style.letterSpacing = '1px';
+        } else {
+          wtEl.textContent = 'RTD';
+          wtEl.style.color = '#aa44ff';
+          wtEl.style.fontSize = '';
+          wnEl.textContent = '';
+          wnEl.style.color = '';
+          wnEl.style.fontSize = '';
+        }
+      } else {
+        wtEl.textContent = '';
+        wnEl.textContent = '';
       }
     }
   }

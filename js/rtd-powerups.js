@@ -6,10 +6,18 @@
 
 const RTD_EFFECTS = [
   {
-    id: 'double_fire',
-    label: '🔥 DOUBLE FIRE RATE',
-    desc: 'Your fire rate is doubled for 15 seconds!',
+    id: 'machinegun',
+    label: '🔥 MACHINEGUN',
+    desc: 'Fire rate is 4x faster for 15 seconds!',
     color: '#ff6600',
+    duration: 15000,
+    good: true,
+  },
+  {
+    id: 'triple_speed',
+    label: '⚡ TRIPLE SPEED',
+    desc: 'You move 3x faster for 15 seconds!',
+    color: '#ffff44',
     duration: 15000,
     good: true,
   },
@@ -52,6 +60,14 @@ const RTD_EFFECTS = [
     color: '#ff4060',
     duration: 15000,
     good: false,
+  },
+  {
+    id: 'glass_canon',
+    label: '💀 GLASS CANNON',
+    desc: '1 HP, normal fire rate, 1000 bullet damage. HP restored on expiry!',
+    color: '#ff4060',
+    duration: 15000,
+    good: true,  // high risk, high reward
   },
 ];
 

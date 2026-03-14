@@ -268,7 +268,7 @@ function tickGame(state, dt, now) {
 // ================================================================
 const ffaLobbies = new Map();
 
-const FFA_SPEED   = 180, FFA_BSPEED = 560, FFA_FIRE_CD = 260;
+const FFA_SPEED   = 180, FFA_BSPEED = 560, FFA_FIRE_CD = 520; // doubled from 260
 const FFA_DMG     = 34,  FFA_TANK_R = 16,  FFA_BULL_R  = 5;
 const FFA_DURATION= 300; // seconds
 const FFA_RESPAWN = 3000; // ms
@@ -312,14 +312,16 @@ const FFA_WALLS = buildFFAWalls();
 //  RTD — Roll The Dice effect definitions (mirrors rtd-powerups.js)
 // ================================================================
 const RTD_EFFECTS = [
-  { id:'double_fire', duration:15000 },
+  { id:'machinegun',   duration:15000 },
+  { id:'triple_speed', duration:15000 },
   { id:'double_hp',   duration:15000 },
   { id:'wallhack',    duration:15000 },
   { id:'bouncy',      duration:15000 },
   { id:'half_fire',   duration:15000 },
   { id:'half_speed',  duration:15000 },
+  { id:'glass_canon', duration:15000 },
 ];
-const RTD_POINTS_PER_KILL = 3; // score per kill (use 3 in prod)
+const RTD_POINTS_PER_KILL = 30; // score per kill (use 3 in prod)
 const RTD_ROLL_COST      = 10; // points needed to roll
 
 
@@ -410,6 +412,7 @@ function ffaTick(lobby,dt,now){
           p.effect    = eff.id;
           p.effectEnd = now + eff.duration;
           if(eff.id==='double_hp') p.hp = Math.min(p.hp*2, 200);
+        if(eff.id==='glass_canon'){ p._hpBeforeGlass = p.hp; p.hp = 1; }
           ffaBcast(lobby,{type:'rtd_rolled',playerIdx:p.idx,effectId:eff.id,duration:eff.duration});
         } else if(!p.effect){
           wsend(lobby.sockets[p.idx],{type:'rtd_no_points',have:p.points,need:RTD_ROLL_COST});
@@ -426,7 +429,9 @@ function ffaTick(lobby,dt,now){
     if(inp.left)dx-=1; if(inp.right)dx+=1;
     if(dx||dy){
       const len=Math.sqrt(dx*dx+dy*dy);dx/=len;dy/=len;
-      const spd = p.effect==='half_speed' ? FFA_SPEED*0.5 : FFA_SPEED;
+      const spd = p.effect==='triple_speed' ? FFA_SPEED*3
+                : p.effect==='half_speed'   ? FFA_SPEED*0.5
+                : FFA_SPEED;
       const nx=p.x+dx*spd*dt,ny=p.y+dy*spd*dt;
       if(!ffaCircleWall(nx,p.y,FFA_TANK_R))p.x=nx;
       if(!ffaCircleWall(p.x,ny,FFA_TANK_R))p.y=ny;
@@ -439,13 +444,19 @@ function ffaTick(lobby,dt,now){
     // ── RTD: expire effects ───────────────────────────────────────
     if(p.effect && now >= p.effectEnd){
       console.log(`[RTD-DEBUG] Effect expired for P${p.idx}: ${p.effect}`);
+      const expiredEffect = p.effect;
       p.effect=null; p.effectEnd=0;
-      if(p.hp > 100) p.hp = 100; // clamp HP if double_hp wore off
+      if(expiredEffect==='double_hp'  && p.hp > 100) p.hp = 100;
+      if(expiredEffect==='glass_canon') p.hp = Math.min(100, p._hpBeforeGlass || 100);
     }
 
+    // ── RTD: per-tick effect modifiers ───────────────────────────
+    if(p.effect==='double_hp' && p.hp < 200) p.hp = Math.min(200, p.hp + 5*dt);
+    if(p.effect==='glass_canon') p.hp = 1; // keep pinned at 1
+
     // ── Fire (with RTD modifiers) ─────────────────────────────────
-    const fireCd = p.effect==='double_fire' ? FFA_FIRE_CD/2
-                 : p.effect==='half_fire'   ? FFA_FIRE_CD*2
+    const fireCd = p.effect==='machinegun' ? FFA_FIRE_CD/4
+                 : p.effect==='half_fire'  ? FFA_FIRE_CD*2
                  : FFA_FIRE_CD;
     if(inp.fire&&now-p.lastFire>=fireCd){
       p.lastFire=now;
@@ -453,8 +464,9 @@ function ffaTick(lobby,dt,now){
       bullets.push({id:lobby.nextBulletId++,owner:p.idx,
         x:p.x+Math.cos(rad)*12,y:p.y+Math.sin(rad)*12,
         vx:Math.cos(rad)*FFA_BSPEED,vy:Math.sin(rad)*FFA_BSPEED,born:now,
-        wallhack: p.effect==='wallhack',
-        bouncy:   p.effect==='bouncy'});
+        wallhack:     p.effect==='wallhack',
+        bouncy:       p.effect==='bouncy',
+        glassCannon:  p.effect==='glass_canon'});
     }
   }
   const alive=[];
@@ -478,7 +490,8 @@ function ffaTick(lobby,dt,now){
     for(const p of Object.values(players)){
       if(!p||!p.alive||p.idx===b.owner)continue;
       if((b.x-p.x)**2+(b.y-p.y)**2<(FFA_TANK_R+FFA_BULL_R)**2){
-        p.hp=Math.max(0,p.hp-FFA_DMG);
+        const dmg = b.glassCannon ? 1000 : FFA_DMG;
+        p.hp=Math.max(0,p.hp-dmg);
         if(p.hp<=0){
           p.alive=false;p.deaths++;p.respawnAt=now+FFA_RESPAWN;
           const killer=players[b.owner];

@@ -497,8 +497,7 @@ function _launchFFAGame() {
   document.getElementById('overlay').classList.add('hidden');
 
   // Fix 5: hide wave-mode HUD elements — irrelevant in FFA
-  document.getElementById('wave-title').style.visibility = 'hidden';
-  document.getElementById('wave-num').style.visibility   = 'hidden';
+  // Don't hide wave-title/wave-num — RTD mode reuses them as the status display
 
   if (phaserGame) { try { phaserGame.destroy(true); } catch {} phaserGame = null; }
   activeMap = MAP_FFA;

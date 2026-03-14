@@ -22,11 +22,15 @@
       <div id="wave-title">WAVE</div>
       <div id="wave-num">—</div>
     </div>
-    <div class="hud-block right">
-      <span class="hud-label">KILLS</span>
-      <span class="hud-value" id="score-val">0</span>
-      <span class="hud-label" id="points-label" style="display:none;color:#ffff44;margin-top:2px">POINTS</span>
-      <span class="hud-value" id="points-val" style="display:none;color:#ffff44">0</span>
+    <div style="display:flex;gap:16px;align-items:flex-start">
+      <div class="hud-block right">
+        <span class="hud-label">KILLS</span>
+        <span class="hud-value" id="score-val">0</span>
+      </div>
+      <div class="hud-block right" id="hud-points-block" style="display:none">
+        <span class="hud-label" style="color:#ffff44">POINTS</span>
+        <span class="hud-value" id="points-val" style="color:#ffff44">0</span>
+      </div>
     </div>
   </div>
 
