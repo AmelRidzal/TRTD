@@ -501,8 +501,10 @@ function _launchFFAGame() {
   // Don't hide wave-title/wave-num — RTD mode reuses them as the status display
 
   if (phaserGame) { try { phaserGame.destroy(true); } catch {} phaserGame = null; }
-  activeMap = (window._ffaMapId === 'ffa2' && typeof MAP_FFA2 !== 'undefined') ? MAP_FFA2 : MAP_FFA;
-
+  if      (window._ffaMapId === 'ffa' && typeof MAP_FFA !== 'undefined') activeMap = MAP_FFA;
+  else if (window._ffaMapId === 'ffa2' && typeof MAP_FFA2 !== 'undefined') activeMap = MAP_FFA2;
+  else if (window._ffaMapId === 'ffa3' && typeof MAP_FFA3 !== 'undefined') activeMap = MAP_FFA3;
+  else activeMap = MAP_FFA;
   // Buffer any state messages that arrive before the scene's create() runs.
   window._ffaMsgQueue = [];
   duelSocket.onmessage = evt => {

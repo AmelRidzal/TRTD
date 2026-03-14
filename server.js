@@ -280,34 +280,73 @@ const MAPS_CONFIG  = JSON.parse(fs.readFileSync(path.join(GAME_DIR, 'maps-config
 const FFA_MAP_POOL = Object.entries(MAPS_CONFIG).map(([id,cfg])=>({id,spawns:cfg.spawns,walls:cfg.walls||[]}));
 const FFA_SPAWNS   = MAPS_CONFIG.ffa.spawns;
 
-function buildFFAWalls() {
-  const r = [];
-  r.push({x:0,y:0,w:FFA_W,h:FFA_T},{x:0,y:FFA_H-FFA_T,w:FFA_W,h:FFA_T},
-         {x:0,y:0,w:FFA_T,h:FFA_H},{x:FFA_W-FFA_T,y:0,w:FFA_T,h:FFA_H});
-  const hSegs=[[60,400,600],[900,400,300],[1500,400,300],[1900,400,440],
-    [60,800,350],[550,800,500],[1200,800,200],[1600,800,500],[2250,800,90],
-    [60,1200,600],[900,1200,300],[1500,1200,300],[1900,1200,440]];
-  for(const[x,y,w]of hSegs)r.push({x,y,w,h:FFA_T});
-  const vSegs=[[600,60,280],[600,460,280],[600,860,280],[600,1260,280],
-    [1200,60,280],[1200,460,280],[1200,860,280],[1200,1260,280],
-    [1800,60,280],[1800,460,280],[1800,860,280],[1800,1260,280]];
-  for(const[x,y,h]of vSegs)r.push({x,y,w:FFA_T,h});
-  r.push({x:1000,y:680,w:400,h:FFA_T},{x:1000,y:920,w:400,h:FFA_T},
-         {x:1000,y:680,w:FFA_T,h:120},{x:1000,y:820,w:FFA_T,h:100},
-         {x:1400,y:680,w:FFA_T,h:120},{x:1400,y:820,w:FFA_T,h:100});
-  r.push({x:250,y:180,w:150,h:FFA_T},{x:250,y:180,w:FFA_T,h:150},
-         {x:2000,y:180,w:150,h:FFA_T},{x:2150,y:180,w:FFA_T,h:150},
-         {x:250,y:1420,w:150,h:FFA_T},{x:250,y:1270,w:FFA_T,h:150},
-         {x:2000,y:1420,w:150,h:FFA_T},{x:2150,y:1270,w:FFA_T,h:150});
-  const pillars=[[400,600],[800,220],[1200,500],[1600,220],[2000,600],
-    [400,1000],[800,1380],[1200,1100],[1600,1380],[2000,1000],[700,800],[1700,800]];
-  for(const[px,py]of pillars){
-    r.push({x:px-30,y:py-30,w:60,h:FFA_T},{x:px-30,y:py+20,w:60,h:FFA_T},
-           {x:px-30,y:py-30,w:FFA_T,h:60},{x:px+20,y:py-30,w:FFA_T,h:60});
-  }
-  return r;
+// ================================================================
+//  Segment-based collision — walls are {x1,y1,x2,y2} line segments.
+//  This supports true diagonal walls with exact circle collision.
+// ================================================================
+
+// Convert AABB rect {x,y,w,h} to 4 edge segments
+function rectToSegs(r) {
+  return [
+    {x1:r.x,      y1:r.y,      x2:r.x+r.w, y2:r.y},
+    {x1:r.x+r.w,  y1:r.y,      x2:r.x+r.w, y2:r.y+r.h},
+    {x1:r.x+r.w,  y1:r.y+r.h,  x2:r.x,     y2:r.y+r.h},
+    {x1:r.x,      y1:r.y+r.h,  x2:r.x,     y2:r.y},
+  ];
 }
-const FFA_WALLS = buildFFAWalls();
+
+// Closest point on segment to circle centre, returns {px,py,t}
+function closestPtOnSeg(cx,cy,x1,y1,x2,y2) {
+  const dx=x2-x1, dy=y2-y1;
+  const lenSq=dx*dx+dy*dy;
+  if(lenSq===0) return {px:x1,py:y1,t:0};
+  const t=Math.max(0,Math.min(1,((cx-x1)*dx+(cy-y1)*dy)/lenSq));
+  return {px:x1+t*dx, py:y1+t*dy, t};
+}
+
+// Circle vs segment — returns {hit, nx, ny, depth} where nx/ny is outward normal
+function circleSegment(cx,cy,cr,seg) {
+  const {px,py} = closestPtOnSeg(cx,cy,seg.x1,seg.y1,seg.x2,seg.y2);
+  const dx=cx-px, dy=cy-py;
+  const distSq=dx*dx+dy*dy;
+  if(distSq>=cr*cr) return {hit:false};
+  const dist=Math.sqrt(distSq)||0.001;
+  return {hit:true, nx:dx/dist, ny:dy/dist, depth:cr-dist};
+}
+
+// Test if circle overlaps any wall segment
+function ffaCircleWall(cx,cy,cr,walls){
+  if(!walls||!walls.length) return false;
+  for(const seg of walls){
+    if(circleSegment(cx,cy,cr,seg).hit) return true;
+  }
+  return false;
+}
+
+// Resolve circle against all wall segments, pushing it out
+// Returns {x,y} of pushed-out position
+function ffaResolveCircle(cx,cy,cr,walls){
+  if(!walls) return {x:cx,y:cy};
+  for(const seg of walls){
+    const res=circleSegment(cx,cy,cr,seg);
+    if(res.hit){ cx+=res.nx*res.depth; cy+=res.ny*res.depth; }
+  }
+  return {x:cx,y:cy};
+}
+
+// Reflect velocity off wall normal for bouncy bullets
+// Returns {vx,vy,nx,ny} of first hit wall, or null
+function ffaBulletWallHit(bx,by,cr,walls){
+  if(!walls) return null;
+  for(const seg of walls){
+    const res=circleSegment(bx,by,cr,seg);
+    if(res.hit) return res;
+  }
+  return null;
+}
+
+// Fallback walls (empty — each lobby loads its own from maps-config)
+const FFA_WALLS = [];
 
 // ================================================================
 //  RTD — Roll The Dice effect definitions (mirrors rtd-powerups.js)
@@ -322,7 +361,7 @@ const RTD_EFFECTS = [
   { id:'half_speed',  duration:15000 },
   { id:'glass_canon', duration:15000 },
 ];
-const RTD_POINTS_PER_KILL = 30; // score per kill (use 3 in prod)
+const RTD_POINTS_PER_KILL = 4; // score per kill (use 3 in prod)
 const RTD_ROLL_COST      = 10; // points needed to roll
 
 
@@ -439,8 +478,10 @@ function ffaTick(lobby,dt,now){
                 : p.effect==='half_speed'   ? FFA_SPEED*0.5
                 : FFA_SPEED;
       const nx=p.x+dx*spd*dt,ny=p.y+dy*spd*dt;
-      if(!ffaCircleWall(nx,p.y,FFA_TANK_R,lobby.mapWalls))p.x=nx;
-      if(!ffaCircleWall(p.x,ny,FFA_TANK_R,lobby.mapWalls))p.y=ny;
+      // Move each axis independently, then resolve against all segments
+      const rx=ffaResolveCircle(nx,p.y,FFA_TANK_R,lobby.mapWalls);
+      const ry=ffaResolveCircle(p.x,ny,FFA_TANK_R,lobby.mapWalls);
+      p.x=rx.x; p.y=ry.y;
       p.x=Math.max(FFA_TANK_R,Math.min(FFA_W-FFA_TANK_R,p.x));
       p.y=Math.max(FFA_TANK_R,Math.min(FFA_H-FFA_TANK_R,p.y));
       p.angle=Math.atan2(dy,dx)*180/Math.PI+90;
@@ -480,17 +521,21 @@ function ffaTick(lobby,dt,now){
     if(now-b.born>2200)continue;
     b.x+=b.vx*dt;b.y+=b.vy*dt;
     if(b.x<0||b.x>FFA_W||b.y<0||b.y>FFA_H)continue;
-    if(!b.wallhack && ffaCircleWall(b.x,b.y,FFA_BULL_R,lobby.mapWalls)){
-      if(b.bouncy){
-        // Simple bounce: reverse whichever axis is closer to a wall
-        const testX = ffaCircleWall(b.x+b.vx*0.033,b.y,FFA_BULL_R,lobby.mapWalls);
-        const testY = ffaCircleWall(b.x,b.y+b.vy*0.033,FFA_BULL_R,lobby.mapWalls);
-        if(testX) b.vx=-b.vx;
-        if(testY) b.vy=-b.vy;
-        if(!testX&&!testY){b.vx=-b.vx;b.vy=-b.vy;}
-        b.bounces=(b.bounces||0)+1;
-        if(b.bounces>6)continue; // max bounces
-      } else { continue; }
+    if(!b.wallhack){
+      const hit=ffaBulletWallHit(b.x,b.y,FFA_BULL_R,lobby.mapWalls);
+      if(hit){
+        if(b.bouncy){
+          b.bounces=(b.bounces||0)+1;
+          if(b.bounces>6){continue;}
+          // True reflection: v' = v - 2(v·n)n
+          const dot=b.vx*hit.nx+b.vy*hit.ny;
+          b.vx-=2*dot*hit.nx;
+          b.vy-=2*dot*hit.ny;
+          // Push bullet out of wall
+          b.x+=hit.nx*hit.depth;
+          b.y+=hit.ny*hit.depth;
+        } else { continue; }
+      }
     }
     let hit=false;
     for(const p of Object.values(players)){

@@ -1,100 +1,79 @@
 // ================================================================
 //  map-ffa2.js  —  "CROSSFIRE"  2400×1600
-//  Diagonal-feel map with angled wall clusters and open centre.
-//  Walls are thin AABB rects arranged in diagonal chains.
+//  True diagonal walls defined as {x1,y1,x2,y2} line segments.
+//  Physics and rendering both use segments — no staircase approximation.
 // ================================================================
 
 const MAP_FFA2 = {
   id: 'ffa2', label: 'CROSSFIRE', width: 2400, height: 1600,
   isFFA: true,
 
-  // 11 spawn points matching the red circles in the sketch
   spawns: [
     {x: 160,  y: 120},  {x: 840,  y: 120},  {x: 2240, y: 120},
     {x: 480,  y: 340},  {x: 1200, y: 280},  {x: 1900, y: 340},
-    {x: 260,  y: 800},                        {x: 2150, y: 800},
-    {x: 160,  y: 1480}, {x: 1200, y: 1320}, {x: 2240, y: 1480},
+    {x: 260,  y: 800},  {x: 2150, y: 800},
+    {x: 160,  y: 1480}, {x: 1200, y: 1420}, {x: 2240, y: 1480},
   ],
 
   get walls() {
-    const r = [], T = 12, W = 2400, H = 1600;
+    const W = 2400, H = 1600;
+    return [
+      // Border
+      {x1:0,y1:0,x2:W,y2:0},
+      {x1:W,y1:0,x2:W,y2:H},
+      {x1:W,y1:H,x2:0,y2:H},
+      {x1:0,y1:H,x2:0,y2:0},
 
-    // Border
-    r.push(
-      {x:0,   y:0,   w:W,  h:T},
-      {x:0,   y:H-T, w:W,  h:T},
-      {x:0,   y:0,   w:T,  h:H},
-      {x:W-T, y:0,   w:T,  h:H}
-    );
+      // Top-left cluster
+      {x1:180,y1:160,x2:390,y2:360},   // \
+      {x1:680,y1:160,x2:480,y2:360},   // /
 
-    // Helper: diagonal chain — a line of short rects stepping diagonally
-    // dir: 1 = top-left to bottom-right, -1 = top-right to bottom-left
-    // Each segment: 60px long, 12px wide, stepping 50px across & 50px down
-    function diag(startX, startY, steps, dir) {
-      for (let i = 0; i < steps; i++) {
-        const cx = startX + i * 50 * dir;
-        const cy = startY + i * 50;
-        // Rotated ~45° using two overlapping rects
-        r.push({x: cx,      y: cy,      w: 55, h: T});
-        r.push({x: cx+T*dir, y: cy+T,   w: T,  h: 30});
-      }
-    }
+      // Top-centre horizontal
+      {x1:900,y1:130,x2:1400,y2:130},
 
-    // Top-left cluster (2 diagonal walls crossing)
-    diag(180,  160, 4,  1);   // \
-    diag(480,  160, 4, -1);   // /
+      // Top-right cluster
+      {x1:1820,y1:160,x2:2030,y2:360}, // \
+      {x1:2280,y1:160,x2:2080,y2:360}, // /
 
-    // Top-centre horizontal break wall
-    r.push({x: 900, y: 130, w: 500, h: T});
+      // Mid-left diagonal pair
+      {x1:60, y1:500,x2:310,y2:740},   // \
+      {x1:540,y1:500,x2:290,y2:740},   // /
 
-    // Top-right cluster
-    diag(1820, 160, 4,  1);  // \
-    diag(2100, 160, 4, -1);  // /
+      // Centre-left horizontal
+      {x1:60, y1:780,x2:480,y2:780},
 
-    // Mid-left diagonal pair
-    diag(60,   500, 5,  1);  // \
-    diag(350,  500, 5, -1);  // /
+      // Centre horizontal
+      {x1:700,y1:500,x2:1020,y2:500},
 
-    // Centre-left horizontal
-    r.push({x: 60,   y: 780, w: 420, h: T});
+      // Centre X crossing
+      {x1:1000,y1:400,x2:1250,y2:640}, // \
+      {x1:1450,y1:400,x2:1200,y2:640}, // /
 
-    // Centre horizontal long wall
-    r.push({x: 700,  y: 500, w: 320, h: T});
+      // Centre-right horizontal
+      {x1:1920,y1:780,x2:2340,y2:780},
 
-    // Centre cluster — X crossing
-    diag(1000, 400, 5,  1);  // \
-    diag(1250, 400, 5, -1);  // /
+      // Mid-right diagonal pair
+      {x1:1990,y1:500,x2:2240,y2:740}, // \
+      {x1:2380,y1:500,x2:2130,y2:740}, // /
 
-    // Centre-right horizontal
-    r.push({x: 1920, y: 780, w: 420, h: T});
+      // Lower-left
+      {x1:120,y1:900,x2:370,y2:1140},  // \
+      {x1:600,y1:900,x2:350,y2:1140},  // /
 
-    // Mid-right diagonal pair
-    diag(1990, 500, 5,  1);  // \
-    diag(2250, 500, 5, -1);  // /
+      // Lower-centre
+      {x1:700, y1:1100,x2:1020,y2:1100},
+      {x1:1000,y1:950, x2:1250,y2:1190}, // \
+      {x1:1450,y1:950, x2:1200,y2:1190}, // /
 
-    // Lower-left diagonal
-    diag(120,  900, 5,  1);
-    diag(420,  900, 5, -1);
+      // Lower-right
+      {x1:1950,y1:900,x2:2200,y2:1140}, // \
+      {x1:2350,y1:900,x2:2100,y2:1140}, // /
 
-    // Lower-centre pair
-    r.push({x: 700,  y: 1100, w: 320, h: T});
-    diag(1000, 950,  5,  1);
-    diag(1250, 950,  5, -1);
-
-    // Lower-right diagonal
-    diag(1950, 900,  5,  1);
-    diag(2200, 900,  5, -1);
-
-    // Bottom-left horizontal
-    r.push({x: 60,   y: 1270, w: 450, h: T});
-
-    // Bottom-centre
-    r.push({x: 900,  y: 1320, w: 550, h: T});
-
-    // Bottom-right horizontal
-    r.push({x: 1890, y: 1270, w: 450, h: T});
-
-    return r;
+      // Bottom horizontals
+      {x1:60,  y1:1270,x2:510, y2:1270},
+      {x1:900, y1:1320,x2:1450,y2:1320},
+      {x1:1890,y1:1270,x2:2340,y2:1270},
+    ];
   },
 
   build(scene) {
@@ -107,18 +86,24 @@ const MAP_FFA2 = {
     for (let x = 0; x < W; x += 80) gfx.lineBetween(x, 0, x, H);
     for (let y = 0; y < H; y += 80) gfx.lineBetween(0, y, W, y);
 
-    // Walls
+    // Draw walls as true diagonal lines
     const wg = scene.add.graphics().setDepth(2);
-    for (const r of this.walls) {
-      wg.fillStyle(0x1a1a40, 1); wg.fillRect(r.x, r.y, r.w, r.h);
-      wg.lineStyle(1, 0x3030aa, 0.8); wg.strokeRect(r.x, r.y, r.w, r.h);
+    for (const seg of this.walls) {
+      wg.lineStyle(10, 0x1a1a40, 1);
+      wg.beginPath(); wg.moveTo(seg.x1,seg.y1); wg.lineTo(seg.x2,seg.y2); wg.strokePath();
+      wg.lineStyle(1, 0x3030aa, 0.8);
+      wg.beginPath(); wg.moveTo(seg.x1,seg.y1); wg.lineTo(seg.x2,seg.y2); wg.strokePath();
     }
 
-    // Physics
+    // Physics: rotated rectangle per segment
     const group = scene.physics.add.staticGroup();
-    for (const r of this.walls) {
-      const body = scene.add.rectangle(r.x + r.w/2, r.y + r.h/2, r.w, r.h).setVisible(false);
-      scene.physics.add.existing(body, true);
+    for (const seg of this.walls) {
+      const dx=seg.x2-seg.x1, dy=seg.y2-seg.y1;
+      const len=Math.sqrt(dx*dx+dy*dy);
+      if(len<1) continue;
+      const body = scene.add.rectangle((seg.x1+seg.x2)/2,(seg.y1+seg.y2)/2,len,10).setVisible(false);
+      body.setRotation(Math.atan2(dy,dx));
+      scene.physics.add.existing(body,true);
       group.add(body);
     }
 
