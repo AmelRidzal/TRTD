@@ -442,7 +442,8 @@ function _connectFFASocket(code) {
                  : `Waiting for players… (${m.count}/8, need 2+)`;
     }
     if (m.type === 'ffa_start') {
-      if (m.mode) ffaLobbyMode = m.mode;
+      if (m.mode)  ffaLobbyMode = m.mode;
+      if (m.mapId) window._ffaMapId = m.mapId;
       _launchFFAGame();
     }
     if (m.type === 'ffa_disbanded') {
@@ -500,7 +501,8 @@ function _launchFFAGame() {
   // Don't hide wave-title/wave-num — RTD mode reuses them as the status display
 
   if (phaserGame) { try { phaserGame.destroy(true); } catch {} phaserGame = null; }
-  activeMap = MAP_FFA;
+  // Use server-chosen map
+  activeMap = (window._ffaMapId === 'ffa2' && typeof MAP_FFA2 !== 'undefined') ? MAP_FFA2 : MAP_FFA;
 
   // Buffer any state messages that arrive before the scene's create() runs.
   window._ffaMsgQueue = [];
@@ -511,8 +513,8 @@ function _launchFFAGame() {
 
   phaserGame = new Phaser.Game({
     type: Phaser.AUTO,
-    width: MAP_FFA.width,
-    height: MAP_FFA.height,
+    width: activeMap.width,
+    height: activeMap.height,
     parent: 'phaser-container',
     backgroundColor: '#06060f',
     physics: { default: 'arcade', arcade: { gravity: { y: 0 }, debug: false } },
@@ -522,7 +524,7 @@ function _launchFFAGame() {
 
   // Fix 4: force applyScale with the known FFA canvas size immediately,
   // then again once Phaser has actually inserted the canvas element.
-  applyScale(MAP_FFA.width, MAP_FFA.height);
+  applyScale(activeMap.width, activeMap.height);
   const _waitForCanvas = setInterval(() => {
     const c = document.querySelector('#phaser-container canvas');
     if (c && c.width > 0) {

@@ -4,11 +4,7 @@
 
 // All available maps. Add new maps here after adding their <script>.
 const MAPS = {
-  arena:       MAP_ARENA,
-  corridor:    MAP_CORRIDOR,
-  fortress:    MAP_FORTRESS,
-  bunker:      MAP_BUNKER,
-  crossroads:  MAP_CROSSROADS,
+  arena: MAP_ARENA,
   // ffa not in random pool — launched directly
 };
 

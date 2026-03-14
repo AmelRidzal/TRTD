@@ -274,10 +274,10 @@ const FFA_DURATION= 300; // seconds
 const FFA_RESPAWN = 3000; // ms
 const FFA_W = 2400, FFA_H = 1600, FFA_T = 10;
 
-// Load spawn points (and future map config) from maps-config.json.
-// To change spawns or add new FFA maps, edit that file only — no server changes needed.
-const MAPS_CONFIG = JSON.parse(fs.readFileSync(path.join(GAME_DIR, 'maps-config.json'), 'utf8'));
-const FFA_SPAWNS  = MAPS_CONFIG.ffa.spawns;
+// Load all FFA map configs — add new maps to maps-config.json only, no server changes needed.
+const MAPS_CONFIG   = JSON.parse(fs.readFileSync(path.join(GAME_DIR, 'maps-config.json'), 'utf8'));
+const FFA_MAP_POOL  = Object.entries(MAPS_CONFIG).map(([id, cfg]) => ({ id, spawns: cfg.spawns }));
+const FFA_SPAWNS    = MAPS_CONFIG.ffa.spawns; // fallback
 
 function buildFFAWalls() {
   const r = [];
@@ -336,18 +336,19 @@ function ffaCircleWall(cx,cy,cr){
 
 // FIX 2: pick randomly from all spawns except the closest one to any living player
 // (old behaviour always picked the single furthest — safe but totally predictable)
-function ffaPickSpawn(players){
+function ffaPickSpawn(players, spawns){
+  const spawnList = spawns || FFA_SPAWNS;
   const living=Object.values(players).filter(p=>p&&p.alive);
-  if(!living.length)return FFA_SPAWNS[Math.floor(Math.random()*FFA_SPAWNS.length)];
-  const scored=FFA_SPAWNS.map(sp=>{
+  if(!living.length)return spawnList[Math.floor(Math.random()*spawnList.length)];
+  const scored=spawnList.map(sp=>{
     const minD=Math.min(...living.map(p=>Math.hypot(p.x-sp.x,p.y-sp.y)));
     return{sp,dist:minD};
   });
   // Sort ascending so [0] is the closest (most dangerous) spawn
   scored.sort((a,b)=>a.dist-b.dist);
   // Drop the closest, pick randomly from everything else
-  const pool=scored.length>1 ? scored.slice(1) : scored;
-  return pool[Math.floor(Math.random()*pool.length)].sp;
+  const safePool=scored.length>1 ? scored.slice(1) : scored;
+  return safePool[Math.floor(Math.random()*safePool.length)].sp;
 }
 
 function ffaMakeCode(){
@@ -373,11 +374,15 @@ function ffaMakePlayer(idx,x,y){
 function ffaStartGame(lobby){
   lobby.status='playing';
   lobby.startTime=Date.now();
+  // Pick a random FFA map for this game
+  const pickedMap = FFA_MAP_POOL[Math.floor(Math.random()*FFA_MAP_POOL.length)];
+  lobby.mapId     = pickedMap.id;
+  lobby.mapSpawns = pickedMap.spawns;
   for(const idx of Object.keys(lobby.sockets).map(Number)){
-    const sp=ffaPickSpawn(lobby.players);
+    const sp=ffaPickSpawn(lobby.players, lobby.mapSpawns);
     lobby.players[idx]=ffaMakePlayer(idx,sp.x,sp.y);
   }
-  ffaBcast(lobby,{type:'ffa_start',mode:lobby.mode});
+  ffaBcast(lobby,{type:'ffa_start',mode:lobby.mode,mapId:lobby.mapId});
   console.log('[ffa] Started lobby',lobby.code,'with',lobby.nextIdx,'players');
   let last=Date.now();
   lobby.tickInterval=setInterval(()=>{
@@ -393,7 +398,7 @@ function ffaTick(lobby,dt,now){
   for(const p of Object.values(players)){
     if(!p||p.alive)continue;
     if(p.respawnAt&&now>=p.respawnAt){
-      const sp=ffaPickSpawn(players);
+      const sp=ffaPickSpawn(players, lobby.mapSpawns);
       p.x=sp.x;p.y=sp.y;p.hp=100;p.alive=true;p.respawnAt=null;
       p.effect=null;p.effectEnd=0;
       const s=lobby.sockets[p.idx];
@@ -661,7 +666,7 @@ wss.on('connection', (socket, req) => {
     if (inProgress) {
       const sp = ffaPickSpawn(ffaLobby.players);
       ffaLobby.players[myIdx] = ffaMakePlayer(myIdx, sp.x, sp.y);
-      wsend(socket, {type:'ffa_start',mode:ffaLobby.mode});
+      wsend(socket, {type:'ffa_start',mode:ffaLobby.mode,mapId:ffaLobby.mapId||'ffa'});
     }
 
     socket.on('message', raw => {
