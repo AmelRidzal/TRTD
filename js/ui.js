@@ -501,7 +501,6 @@ function _launchFFAGame() {
   // Don't hide wave-title/wave-num — RTD mode reuses them as the status display
 
   if (phaserGame) { try { phaserGame.destroy(true); } catch {} phaserGame = null; }
-  // Use server-chosen map
   activeMap = (window._ffaMapId === 'ffa2' && typeof MAP_FFA2 !== 'undefined') ? MAP_FFA2 : MAP_FFA;
 
   // Buffer any state messages that arrive before the scene's create() runs.

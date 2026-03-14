@@ -36,13 +36,13 @@ class FFAScene extends Phaser.Scene {
     this.ptrX = this.scale.width  / 2;
     this.ptrY = this.scale.height / 2;
 
-    this.physics.world.setBounds(0, 0, MAP_FFA.width, MAP_FFA.height);
+    this.physics.world.setBounds(0, 0, activeMap.width, activeMap.height);
 
     makeTextures(this);
-    this.walls = MAP_FFA.build(this);
+    this.walls = activeMap.build(this);
 
     this.cameras.main.setZoom(1.5);
-    this.cameras.main.centerOn(MAP_FFA.width / 2, MAP_FFA.height / 2);
+    this.cameras.main.centerOn(activeMap.width / 2, activeMap.height / 2);
 
     this._buildHUD();
     this._setupInput();
@@ -64,7 +64,7 @@ class FFAScene extends Phaser.Scene {
     }
 
     this._inputTick = setInterval(() => this._sendInput(), 33);
-    this.time.delayedCall(80, () => applyScale(MAP_FFA.width, MAP_FFA.height));
+    this.time.delayedCall(80, () => applyScale(activeMap.width, activeMap.height));
 
     // Pre-clear wave HUD elements so stale text from other modes doesn't show
     const _wt = document.getElementById('wave-title');
@@ -309,20 +309,10 @@ class FFAScene extends Phaser.Scene {
     sp.turret.setPosition(sp.body.x, sp.body.y);
     sp.turret.angle = pd.turretAngle;
 
-    // Tint tank to show active RTD effect
-    if (this.isRTD && pd.effect) {
-      const eff = (typeof RTD_BY_ID !== 'undefined') ? RTD_BY_ID[pd.effect] : null;
-      const tintHex = eff ? parseInt(eff.color.replace('#', ''), 16) : 0xffffff;
-      sp.body.setTint(tintHex);
-      sp.turret.setTint(tintHex);
-    } else if (!isMe) {
-      const col = PLAYER_COLS[idx] || 0xffffff;
-      sp.body.setTint(col);
-      sp.turret.setTint(col);
-    } else {
-      sp.body.clearTint();
-      sp.turret.clearTint();
-    }
+    // Always tint by player index colour
+    const baseTint = PLAYER_COLS[idx] || 0xffffff;
+    sp.body.setTint(baseTint);
+    sp.turret.setTint(baseTint);
 
     const BW  = 36;
     const pct = Math.max(0, pd.hp / 100);
@@ -338,9 +328,10 @@ class FFAScene extends Phaser.Scene {
     const isMe = idx === this.myIdx;
     const sp   = this.pSprites[idx] = {};
 
-    sp.body   = this.add.sprite(0, 0, isMe ? 'pbody'   : 'ebody').setDepth(3);
-    sp.turret = this.add.sprite(0, 0, isMe ? 'pturret' : 'eturret').setDepth(5);
-    if (!isMe) { sp.body.setTint(col); sp.turret.setTint(col); }
+    sp.body   = this.add.sprite(0, 0, 'ebody').setDepth(3);
+    sp.turret = this.add.sprite(0, 0, 'eturret').setDepth(5);
+    sp.body.setTint(col);
+    sp.turret.setTint(col);
 
     sp.hpBg  = this.add.rectangle(0, 0, 36, 4, 0x111122).setDepth(7);
     sp.hpBar = this.add.rectangle(0, 0, 36, 4, col).setDepth(8).setOrigin(0, 0.5);
@@ -587,13 +578,13 @@ class FFAScene extends Phaser.Scene {
     const MW = 130, MH = 87, pad = 8;
     const sw = this.scale.width, sh = this.scale.height;
     const mx = sw - MW - pad, my = sh - MH - pad;
-    const sx = MW / MAP_FFA.width, sy = MH / MAP_FFA.height;
+    const sx = MW / activeMap.width, sy = MH / activeMap.height;
     const g  = this.mmGfx; g.clear();
 
     g.fillStyle(0x000000, 0.7); g.fillRect(mx, my, MW, MH);
     g.lineStyle(1, 0x00e5ff, 0.3); g.strokeRect(mx, my, MW, MH);
 
-    for (const r of MAP_FFA.walls) {
+    for (const r of activeMap.walls) {
       const rw = Math.max(1, r.w * sx), rh = Math.max(1, r.h * sy);
       g.fillStyle(0x2828aa, 0.9);
       g.fillRect(mx + r.x * sx, my + r.y * sy, rw, rh);

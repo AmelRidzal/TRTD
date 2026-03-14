@@ -274,10 +274,11 @@ const FFA_DURATION= 300; // seconds
 const FFA_RESPAWN = 3000; // ms
 const FFA_W = 2400, FFA_H = 1600, FFA_T = 10;
 
-// Load all FFA map configs — add new maps to maps-config.json only, no server changes needed.
-const MAPS_CONFIG   = JSON.parse(fs.readFileSync(path.join(GAME_DIR, 'maps-config.json'), 'utf8'));
-const FFA_MAP_POOL  = Object.entries(MAPS_CONFIG).map(([id, cfg]) => ({ id, spawns: cfg.spawns }));
-const FFA_SPAWNS    = MAPS_CONFIG.ffa.spawns; // fallback
+// Load spawn points (and future map config) from maps-config.json.
+// To change spawns or add new FFA maps, edit that file only — no server changes needed.
+const MAPS_CONFIG  = JSON.parse(fs.readFileSync(path.join(GAME_DIR, 'maps-config.json'), 'utf8'));
+const FFA_MAP_POOL = Object.entries(MAPS_CONFIG).map(([id,cfg])=>({id,spawns:cfg.spawns,walls:cfg.walls||[]}));
+const FFA_SPAWNS   = MAPS_CONFIG.ffa.spawns;
 
 function buildFFAWalls() {
   const r = [];
@@ -326,8 +327,9 @@ const RTD_ROLL_COST      = 10; // points needed to roll
 
 
 
-function ffaCircleWall(cx,cy,cr){
-  for(const w of FFA_WALLS){
+function ffaCircleWall(cx,cy,cr,walls){
+  const wallList=walls||FFA_WALLS;
+  for(const w of wallList){
     const nx=Math.max(w.x,Math.min(cx,w.x+w.w)),ny=Math.max(w.y,Math.min(cy,w.y+w.h));
     if((cx-nx)**2+(cy-ny)**2<cr*cr)return true;
   }
@@ -336,8 +338,8 @@ function ffaCircleWall(cx,cy,cr){
 
 // FIX 2: pick randomly from all spawns except the closest one to any living player
 // (old behaviour always picked the single furthest — safe but totally predictable)
-function ffaPickSpawn(players, spawns){
-  const spawnList = spawns || FFA_SPAWNS;
+function ffaPickSpawn(players,spawns){
+  const spawnList=spawns||FFA_SPAWNS;
   const living=Object.values(players).filter(p=>p&&p.alive);
   if(!living.length)return spawnList[Math.floor(Math.random()*spawnList.length)];
   const scored=spawnList.map(sp=>{
@@ -374,12 +376,11 @@ function ffaMakePlayer(idx,x,y){
 function ffaStartGame(lobby){
   lobby.status='playing';
   lobby.startTime=Date.now();
-  // Pick a random FFA map for this game
-  const pickedMap = FFA_MAP_POOL[Math.floor(Math.random()*FFA_MAP_POOL.length)];
-  lobby.mapId     = pickedMap.id;
-  lobby.mapSpawns = pickedMap.spawns;
+  const _m=FFA_MAP_POOL[Math.floor(Math.random()*FFA_MAP_POOL.length)];
+  lobby.mapId=_m.id; lobby.mapSpawns=_m.spawns; lobby.mapWalls=_m.walls;
+  console.log('[ffa] map:',lobby.mapId);
   for(const idx of Object.keys(lobby.sockets).map(Number)){
-    const sp=ffaPickSpawn(lobby.players, lobby.mapSpawns);
+    const sp=ffaPickSpawn(lobby.players,lobby.mapSpawns);
     lobby.players[idx]=ffaMakePlayer(idx,sp.x,sp.y);
   }
   ffaBcast(lobby,{type:'ffa_start',mode:lobby.mode,mapId:lobby.mapId});
@@ -398,7 +399,7 @@ function ffaTick(lobby,dt,now){
   for(const p of Object.values(players)){
     if(!p||p.alive)continue;
     if(p.respawnAt&&now>=p.respawnAt){
-      const sp=ffaPickSpawn(players, lobby.mapSpawns);
+      const sp=ffaPickSpawn(players,lobby.mapSpawns);
       p.x=sp.x;p.y=sp.y;p.hp=100;p.alive=true;p.respawnAt=null;
       p.effect=null;p.effectEnd=0;
       const s=lobby.sockets[p.idx];
@@ -438,8 +439,8 @@ function ffaTick(lobby,dt,now){
                 : p.effect==='half_speed'   ? FFA_SPEED*0.5
                 : FFA_SPEED;
       const nx=p.x+dx*spd*dt,ny=p.y+dy*spd*dt;
-      if(!ffaCircleWall(nx,p.y,FFA_TANK_R))p.x=nx;
-      if(!ffaCircleWall(p.x,ny,FFA_TANK_R))p.y=ny;
+      if(!ffaCircleWall(nx,p.y,FFA_TANK_R,lobby.mapWalls))p.x=nx;
+      if(!ffaCircleWall(p.x,ny,FFA_TANK_R,lobby.mapWalls))p.y=ny;
       p.x=Math.max(FFA_TANK_R,Math.min(FFA_W-FFA_TANK_R,p.x));
       p.y=Math.max(FFA_TANK_R,Math.min(FFA_H-FFA_TANK_R,p.y));
       p.angle=Math.atan2(dy,dx)*180/Math.PI+90;
@@ -479,11 +480,11 @@ function ffaTick(lobby,dt,now){
     if(now-b.born>2200)continue;
     b.x+=b.vx*dt;b.y+=b.vy*dt;
     if(b.x<0||b.x>FFA_W||b.y<0||b.y>FFA_H)continue;
-    if(!b.wallhack && ffaCircleWall(b.x,b.y,FFA_BULL_R)){
+    if(!b.wallhack && ffaCircleWall(b.x,b.y,FFA_BULL_R,lobby.mapWalls)){
       if(b.bouncy){
         // Simple bounce: reverse whichever axis is closer to a wall
-        const testX = ffaCircleWall(b.x+b.vx*0.033,b.y,FFA_BULL_R);
-        const testY = ffaCircleWall(b.x,b.y+b.vy*0.033,FFA_BULL_R);
+        const testX = ffaCircleWall(b.x+b.vx*0.033,b.y,FFA_BULL_R,lobby.mapWalls);
+        const testY = ffaCircleWall(b.x,b.y+b.vy*0.033,FFA_BULL_R,lobby.mapWalls);
         if(testX) b.vx=-b.vx;
         if(testY) b.vy=-b.vy;
         if(!testX&&!testY){b.vx=-b.vx;b.vy=-b.vy;}
